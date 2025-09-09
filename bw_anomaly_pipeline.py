@@ -8,6 +8,7 @@ from openpyxl.styles import PatternFill, Font
 import warnings
 warnings.filterwarnings('ignore')
 
+# Configuration parameters
 CONFIG = {
     "base_dir": ".",
     "materiality_vnd": 1_000_000_000,
@@ -19,10 +20,13 @@ CONFIG = {
     "min_trend_periods": 3
 }
 
+
+# Regex patterns for period normalization
 MONTHS = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"]
 BS_PAT = re.compile(r'^\s*as\s*of\s*(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[\.\-\s]*(\d{2,4})\s*$', re.I)
 PL_PAT = re.compile(r'^\s*(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[\.\-\s]*(\d{2,4})\s*$', re.I)
 
+# Normalize period labels to "Mon YYYY"
 def normalize_period_label(label):
     if label is None: return ""
     s = str(label).strip()
@@ -42,6 +46,7 @@ def normalize_period_label(label):
     except Exception: pass
     return s
 
+# Key function for sorting periods chronologically
 def month_key(label):
     n = normalize_period_label(label)
     m = re.search(r'(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s+(\d{4})', n, re.I)
@@ -49,6 +54,7 @@ def month_key(label):
     y = int(m.group(2)); mi = MONTHS.index(m.group(1).lower())+1
     return (y, mi)
 
+# Detect header row by looking for "Financial Row" in first 40 rows
 def detect_header_row(xl, sheet):
     try:
         probe = pd.read_excel(xl, sheet_name=sheet, header=None, nrows=40)
@@ -60,12 +66,14 @@ def detect_header_row(xl, sheet):
         print(f"Warning: header detect in {sheet}: {e}")
     return 0
 
+# Normalize the "Financial Row" column name
 def normalize_financial_col(df):
     for c in df.columns:
         if str(c).strip().lower() == "financial row":
             return df.rename(columns={c: "Financial row"})
     return df.rename(columns={df.columns[0]: "Financial row"})
 
+# Promote first row to header if it contains period labels
 def promote_row8(df, mode, sub):
     if len(df) < 1: return df, []
     row8 = df.iloc[0]
@@ -86,6 +94,7 @@ def promote_row8(df, mode, sub):
     print(f"[{sub}] {mode} periods detected: {month_cols}")
     return df, month_cols
 
+# Fill down account codes/names and tag rows
 def fill_down_assign(df):
     """
     Tag rows; keep header/detail/total rows for smart aggregation:
@@ -111,6 +120,7 @@ def fill_down_assign(df):
     df = df[keep_mask & df["Account Code"].notna()].copy()
     return df
 
+# Coerce numeric columns, cleaning strings
 def coerce_numeric(df, month_cols):
     out = df.copy()
     for c in month_cols:
@@ -125,6 +135,7 @@ def coerce_numeric(df, month_cols):
             out[c] = pd.to_numeric(series, errors="coerce").fillna(0.0)
     return out
 
+# Smart aggregation per account
 def aggregate_totals(df, month_cols):
     """Smart aggregation per account:
        - Use 'Total' rows when present for a code;
@@ -155,6 +166,7 @@ def aggregate_totals(df, month_cols):
     agg["Account Name"] = agg["Account Code"].map(name_map).fillna("")
     return agg[["Account Code","Account Name"] + [c for c in month_cols if c in agg.columns]]
 
+# Compute MoM changes with trend analysis
 def compute_mom_with_trends(df, month_cols):
     if len(month_cols) < 2:
         return pd.DataFrame(columns=["Account Code","Account Name","Prior","Current","Delta","Pct Change","Period","Trend_3M_Avg","Trend_Deviation"])
@@ -181,14 +193,17 @@ def compute_mom_with_trends(df, month_cols):
         out.append(tmp)
     return pd.concat(out, ignore_index=True) if out else pd.DataFrame(columns=["Account Code","Account Name","Prior","Current","Delta","Pct Change","Period","Trend_3M_Avg","Trend_Deviation"])
 
+# Classify PL accounts as Recurring or Revenue/OPEX
 def classify_pl_account(code):
     code_str = str(code)
     return "Recurring" if any(code_str.startswith(p) for p in CONFIG["recurring_code_prefixes"]) else "Revenue/OPEX"
 
+# Determine likely cause based on thresholds
 def get_threshold_cause(statement, code):
     if statement == "BS": return "Balance changed materially — check reclass/missing offset."
     return "Recurring moved — check accruals/timing." if classify_pl_account(code) == "Recurring" else "Revenue/OPEX moved — check billing/cut-off."
 
+# Match account codes against patterns with wildcards
 def match_codes(series, pattern_str):
     if pd.isna(pattern_str) or pattern_str == "":
         return pd.Series(False, index=series.index)
@@ -202,6 +217,7 @@ def match_codes(series, pattern_str):
             mask |= (series.astype(str) == pattern)
     return mask
 
+# Build correlation anomalies
 def build_corr_anoms(sub,combined,corr_rules,periods,materiality):
     items=[]
     cols = {c.lower(): c for c in corr_rules.columns}
@@ -236,6 +252,7 @@ def build_corr_anoms(sub,combined,corr_rules,periods,materiality):
                 })
     return items
 
+# Build anomalies from BS and PL data
 def build_anoms(sub, bs_data, bs_cols, pl_data, pl_cols, corr_rules, season_rules):
     anomalies = []
     materiality = CONFIG["materiality_vnd"]
@@ -278,6 +295,7 @@ def build_anoms(sub, bs_data, bs_cols, pl_data, pl_cols, corr_rules, season_rule
 
     return pd.DataFrame(anomalies)
 
+# Process a financial tab (BS or PL)
 def process_financial_tab(xl_file, sheet_name, mode, subsidiary):
     try:
         header_row = detect_header_row(xl_file, sheet_name)
@@ -294,6 +312,7 @@ def process_financial_tab(xl_file, sheet_name, mode, subsidiary):
         print(f"Error processing {sheet_name} for {subsidiary}: {e}")
         return pd.DataFrame(), []
 
+# Extract subsidiary name from specific cells or filename    
 def extract_subsidiary_name(xl_file):
     try:
         wb = load_workbook(xl_file, read_only=True, data_only=True)
@@ -308,6 +327,7 @@ def extract_subsidiary_name(xl_file):
         print(f"Warning: Could not extract subsidiary name from {xl_file}: {e}")
     return Path(xl_file).stem.split("_")[0]
 
+# Apply Excel formatting to highlight anomalies
 def apply_excel_formatting(filepath, anomaly_df):
     try:
         wb = load_workbook(filepath)
@@ -327,6 +347,7 @@ def apply_excel_formatting(filepath, anomaly_df):
         wb.save(filepath); wb.close()
     except Exception as e:
         print(f"Warning: Could not apply formatting to {filepath}: {e}")
+
 
 def main():
     base = Path(CONFIG["base_dir"]).resolve()
