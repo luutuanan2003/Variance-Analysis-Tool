@@ -78,18 +78,6 @@ async function checkHealth() {
   }
 }
 
-// =================== OUTPUT LIST (ALL) ===================
-async function refreshOutputs() {
-  try {
-    const r = await fetch(`${API_BASE}/outputs`, { cache: "no-store" });
-    if (!r.ok) throw new Error(`${r.status}`);
-    const j = await r.json();
-    renderLatestFiles(j.files || []);
-    const title = el("outputsTitle"); if (title) title.textContent = "Outputs (all)";
-  } catch (e) {
-    appendLog(`Failed to list outputs: ${e.message}`);
-  }
-}
 
 // =================== PROCESS ===================
 async function runProcess() {
@@ -111,36 +99,46 @@ async function runProcess() {
     const mapping = el("mapping").files?.[0];
     if (mapping) fd.append("mapping_file", mapping);
 
+    // keep desired params (archive_processed/base_dir already removed)
     addIfPresent(fd, "materiality_vnd", el("materiality_vnd").value);
-    addIfPresent(fd, "archive_processed", el("archive_processed").value);
     addIfPresent(fd, "recurring_pct_threshold", el("recurring_pct_threshold").value);
     addIfPresent(fd, "revenue_opex_pct_threshold", el("revenue_opex_pct_threshold").value);
     addIfPresent(fd, "bs_pct_threshold", el("bs_pct_threshold").value);
     addIfPresent(fd, "recurring_code_prefixes", el("recurring_code_prefixes").value);
     addIfPresent(fd, "min_trend_periods", el("min_trend_periods").value);
-    addIfPresent(fd, "base_dir", el("base_dir").value);
 
     appendLog("POST /process …");
-    const resp = await fetch(`${API_BASE}/process`, { method: "POST", body: fd });
+    const resp = await fetch(`/process`, { method: "POST", body: fd });
+
+    if (!resp.ok) {
+      const text = await resp.text();
+      setPill(el("liveStatus"), "failed", "err");
+      appendLog(`Server error (${resp.status}):\n${text}`);
+      return;
+    }
 
     setPill(el("liveStatus"), "processing…", "warn");
 
-    const text = await resp.text();
-    let json; try { json = JSON.parse(text); } catch { json = { raw: text }; }
+    // Expect ONE Excel workbook (.xlsx)
+    const blob = await resp.blob();
 
-    if (!resp.ok) {
-      appendLog(`Server error (${resp.status}):\n` + JSON.stringify(json, null, 2));
-      setPill(el("liveStatus"), "failed", "err");
-    } else {
-      appendLog("Success:\n" + JSON.stringify(json, null, 2));
-      setPill(el("liveStatus"), "done", "ok");
+    // Overwrite the file list with ONE fresh link
+    const url = URL.createObjectURL(blob);
+    const list = el("files");
+    list.innerHTML = "";
+    const li = document.createElement("li");
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "variance_output.xlsx";
+    a.textContent = "variance_output.xlsx";
+    li.appendChild(a);
+    list.appendChild(li);
 
-      // >>> Show ONLY this run's outputs  // NEW/CHANGED
-      latestRunFiles = Array.isArray(json.generated_files) ? json.generated_files : [];
-      renderLatestFiles(latestRunFiles);
-      const title = el("outputsTitle"); if (title) title.textContent = "Outputs (this run)";
-      // (we no longer call refreshOutputs() here)
-    }
+    const title = el("outputsTitle");
+    if (title) title.textContent = "Download (this run)";
+
+    appendLog("Success: Excel ready to download.");
+    setPill(el("liveStatus"), "done", "ok");
   } catch (e) {
     appendLog("Fetch failed: " + e.message);
     setPill(el("liveStatus"), "failed", "err");
@@ -149,15 +147,14 @@ async function runProcess() {
   }
 }
 
+
 // =================== INIT ===================
 function bindEvents() {
   const runBtn = el("runBtn");
   const refreshHealthBtn = el("refreshHealth");
-  const showAllBtn = el("showAllBtn"); // NEW
 
   if (runBtn) runBtn.addEventListener("click", runProcess);
   if (refreshHealthBtn) refreshHealthBtn.addEventListener("click", checkHealth);
-  if (showAllBtn) showAllBtn.addEventListener("click", refreshOutputs); // NEW
 
   // Optional: add a small "Clear log" button under Response box
   const responseBox = el("response");
@@ -175,7 +172,8 @@ function bindEvents() {
 document.addEventListener("DOMContentLoaded", () => {
   bindEvents();
   checkHealth();
-  // Default: show nothing until a run happens // NEW/CHANGED
-  renderLatestFiles([]);
-  const title = el("outputsTitle"); if (title) title.textContent = "Outputs (this run)";
+  renderLatestFiles([]);  // empty at start
+  const title = el("outputsTitle"); 
+  if (title) title.textContent = "Outputs";
 });
+

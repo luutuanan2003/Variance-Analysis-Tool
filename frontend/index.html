@@ -62,13 +62,11 @@
       <div class="sep"></div>
       <div class="grid-2">
         <div class="field"><label for="materiality_vnd">materiality_vnd</label><input id="materiality_vnd" type="number" /></div>
-        <div class="field"><label for="archive_processed">archive_processed</label><input id="archive_processed" type="text" placeholder="true / false" /></div>
         <div class="field"><label for="recurring_pct_threshold">recurring_pct_threshold</label><input id="recurring_pct_threshold" type="text" placeholder="0.05" /></div>
         <div class="field"><label for="revenue_opex_pct_threshold">revenue_opex_pct_threshold</label><input id="revenue_opex_pct_threshold" type="text" placeholder="0.10" /></div>
         <div class="field"><label for="bs_pct_threshold">bs_pct_threshold</label><input id="bs_pct_threshold" type="text" placeholder="0.05" /></div>
         <div class="field"><label for="recurring_code_prefixes">recurring_code_prefixes</label><input id="recurring_code_prefixes" type="text" placeholder="6321,635,515" /></div>
         <div class="field"><label for="min_trend_periods">min_trend_periods</label><input id="min_trend_periods" type="number" placeholder="3" /></div>
-        <div class="field"><label for="base_dir">base_dir</label><input id="base_dir" type="text" placeholder="(optional, default: server setting)" /></div>
       </div>
 
       <div class="sep"></div>
@@ -92,9 +90,8 @@
       </div>
 
       <div class="sep"></div>
-      <div class="row" style="justify-content:space-between; margin-bottom:10px;">
-        <h3 id="outputsTitle" style="margin:0;font-size:16px;">Outputs (this run)</h3>
-        <button id="showAllBtn" class="btn">Show all outputs</button>
+      <div class="row" style="margin-bottom:10px;">
+        <h3 id="outputsTitle" style="margin:0;font-size:16px;">Outputs</h3>
       </div>
       <ul id="files" class="files"></ul>
     </section>

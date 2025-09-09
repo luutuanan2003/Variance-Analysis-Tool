@@ -1,45 +1,43 @@
 # app/core.py
-
 """
-Core data-processing logic for the Variance Analysis Tool.
+Core data-processing logic for the Variance Analysis Tool (stateless, in-memory).
 
 This module:
 - Normalizes messy period labels (e.g., "As of Mar-24" -> "Mar 2024")
-- Reads BS / PL tabs from uploaded Excel files
+- Reads BS / PL tabs from uploaded Excel files (from in-memory bytes)
 - Cleans and aggregates rows to account-level series
 - Computes month-over-month deltas + simple trend signals
 - Applies anomaly rules (materiality + % thresholds + correlation breaks)
-- Writes per-file and consolidated Excel outputs (with conditional formatting)
+- Builds ONE consolidated Excel workbook in memory and returns its bytes
 """
 
 from __future__ import annotations
 
+import io
 import re
-import shutil
 import datetime as dt
-from pathlib import Path
 import warnings
+from typing import List, Tuple, Optional
 
 import numpy as np
 import pandas as pd
-from openpyxl import load_workbook
+from openpyxl import Workbook, load_workbook
 from openpyxl.styles import PatternFill, Font
+from openpyxl.utils.dataframe import dataframe_to_rows
 
 warnings.filterwarnings("ignore")  # Avoid noisy pandas dtype warnings in logs
 
 # -----------------------------------------------------------------------------
-# Defaults & constants
+# Defaults & constants (NO base_dir, NO archive flags)
 # -----------------------------------------------------------------------------
 
 DEFAULT_CONFIG: dict = {
-    "base_dir": ".",                       # root folder holding input/output/archive/logic
     "materiality_vnd": 1_000_000_000,      # absolute VND change threshold
     "recurring_pct_threshold": 0.05,       # 5% for recurring P/L accounts
     "revenue_opex_pct_threshold": 0.10,    # 10% for revenue/opex accounts
     "bs_pct_threshold": 0.05,              # 5% for balance sheet
-    "archive_processed": True,             # move processed inputs to /archive
-    "recurring_code_prefixes": ["6321", "635", "515"],  # treat these as recurring costs
-    "min_trend_periods": 3,                # minimum periods needed to compute simple trend
+    "recurring_code_prefixes": ["6321", "635", "515"],
+    "min_trend_periods": 3,
 }
 
 MONTHS = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"]
@@ -53,23 +51,15 @@ PL_PAT = re.compile(r'^\s*(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[\.\-
 # -----------------------------------------------------------------------------
 
 def normalize_period_label(label: object) -> str:
-    """Turn many month-year formats into 'Mon YYYY'.
-    Examples:
-      'As of Mar-24' -> 'Mar 2024'
-      '10/2023'      -> 'Oct 2023'
-      '2024-01'      -> 'Jan 2024'
-    Returns input-as-string if no recognizable pattern is found.
-    """
+    """Turn many month-year formats into 'Mon YYYY'."""
     if label is None:
         return ""
     s = str(label).strip()
     if s == "":
         return ""
     try:
-        # Strip localized 'as of' phrases commonly seen in Vietnamese reports
         s_clean = re.sub(r'^\s*(as\s*of|tinh\s*den|tính\s*đến|den\s*ngay|đến\s*ngày)\s*', '', s, flags=re.I)
 
-        # e.g. "Mar-24", "Mar 2024"
         m = re.search(r'\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[^\w]?[\s\-\.]*([12]\d{3}|\d{2})\b',
                       s_clean, flags=re.I)
         if m:
@@ -78,19 +68,16 @@ def normalize_period_label(label: object) -> str:
             yr = yr + 2000 if yr < 100 else yr
             return f"{mon.title()} {yr}"
 
-        # e.g. "10/2023"
         m = re.search(r'\b(1[0-2]|0?[1-9])[./\-](\d{4})\b', s_clean)
         if m:
             mon = int(m.group(1)); yr = int(m.group(2))
             return f"{MONTHS[mon-1].title()} {yr}"
 
-        # e.g. "2024-01"
         m = re.search(r'\b(\d{4})[./\-](1[0-2]|0?[1-9])\b', s_clean)
         if m:
             yr = int(m.group(1)); mon = int(m.group(2))
             return f"{MONTHS[mon-1].title()} {yr}"
 
-        # fallback: if both month word and year exist anywhere
         m_year = re.search(r'(20\d{2}|19\d{2})', s_clean)
         m_mon  = re.search(r'\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\b', s_clean, flags=re.I)
         if m_year and m_mon:
@@ -113,13 +100,13 @@ def month_key(label: object) -> tuple[int, int]:
     return (y, mi)
 
 # -----------------------------------------------------------------------------
-# Excel reading / header detection / cleaning
+# Excel reading / header detection / cleaning (IN-MEMORY)
 # -----------------------------------------------------------------------------
 
-def detect_header_row(xl: Path | str, sheet: str) -> int:
+def detect_header_row(xl_bytes: bytes, sheet: str) -> int:
     """Heuristically find the header row by scanning first ~40 rows for 'Financial row'."""
     try:
-        probe = pd.read_excel(xl, sheet_name=sheet, header=None, nrows=40)
+        probe = pd.read_excel(io.BytesIO(xl_bytes), sheet_name=sheet, header=None, nrows=40)
         for i in range(len(probe)):
             row_values = probe.iloc[i].astype(str).str.strip().str.lower()
             if any("financial row" in v for v in row_values):
@@ -139,7 +126,7 @@ def normalize_financial_col(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def promote_row8(df: pd.DataFrame, mode: str, sub: str) -> tuple[pd.DataFrame, list[str]]:
-    """Use the first data row as headers when it looks like period information lives there."""
+    """Use the first data row as headers when period info is there; normalize month columns."""
     if len(df) < 1:
         return df, []
     row0 = df.iloc[0]
@@ -154,7 +141,6 @@ def promote_row8(df: pd.DataFrame, mode: str, sub: str) -> tuple[pd.DataFrame, l
     df.columns = new_cols
     df = df.iloc[1:].reset_index(drop=True)
 
-    # detect columns that look like month-periods
     month_cols: list[str] = []
     for c in df.columns:
         normalized = normalize_period_label(c)
@@ -165,10 +151,9 @@ def promote_row8(df: pd.DataFrame, mode: str, sub: str) -> tuple[pd.DataFrame, l
 
 
 def fill_down_assign(df: pd.DataFrame) -> pd.DataFrame:
-    """Extract account code / name from the descriptor column and forward-fill."""
+    """Extract account code / name from descriptor and forward-fill."""
     ser = df["Financial row"].astype(str)
 
-    # Extract like "1234 - Account name" -> code=1234, name="Account name"
     code_extract = ser.str.extract(r'(\d{4,})', expand=False)
     name_extract = ser.str.replace(r'.*?(\d{4,})\s*[-:]*\s*', '', regex=True).str.strip()
 
@@ -183,14 +168,13 @@ def fill_down_assign(df: pd.DataFrame) -> pd.DataFrame:
     df["RowHadOwnCode"] = row_has_code
     df["IsTotal"] = is_total_with_code
 
-    # Drop section headers / blank rows and keep rows with a code
     keep_mask = ~(is_section | is_empty)
     df = df[keep_mask & df["Account Code"].notna()].copy()
     return df
 
 
 def coerce_numeric(df: pd.DataFrame, month_cols: list[str]) -> pd.DataFrame:
-    """Coerce month columns to numeric (strip commas, parentheses, non-numeric)."""
+    """Coerce month columns to numeric."""
     out = df.copy()
     for c in month_cols:
         if c in out.columns:
@@ -211,7 +195,6 @@ def aggregate_totals(df: pd.DataFrame, month_cols: list[str]) -> pd.DataFrame:
     if df.empty:
         return pd.DataFrame(columns=["Account Code","Account Name"] + month_cols)
 
-    # Map best-known account names (rows that carried their own code)
     nm_src   = df[df["RowHadOwnCode"]] if "RowHadOwnCode" in df.columns else df
     name_map = (
         nm_src.dropna(subset=["Account Code"])[["Account Code","Account Name"]]
@@ -301,12 +284,7 @@ def get_threshold_cause(statement: str, code: object, CONFIG: dict) -> str:
 
 
 def match_codes(series: pd.Series, pattern_str: str | float | int | None) -> pd.Series:
-    """Return boolean mask for 'code patterns' like '111*,112*|515'.
-    Supports:
-      - multiple patterns joined by '|'
-      - '*' suffix for 'starts with'
-      - exact match otherwise
-    """
+    """Return boolean mask for 'code patterns' like '111*,112*|515'."""
     if pd.isna(pattern_str) or pattern_str == "":
         return pd.Series(False, index=series.index)
     patterns = [p.strip() for p in str(pattern_str).split("|") if p.strip()]
@@ -327,12 +305,9 @@ def build_corr_anoms(
     periods: list[str],
     materiality: int,
 ) -> list[dict]:
-    """Correlation-rule anomalies:
-    For each period, compute Δ for 'left' and 'right' sets. If directionality fails and |Δ_left| ≥ materiality -> flag.
-    """
+    """Correlation-rule anomalies; flags when left/right deltas break expected direction."""
     items: list[dict] = []
 
-    # Flexible column picking to tolerate small naming differences
     cols = {c.lower(): c for c in corr_rules.columns}
     def pick(opts: list[str]) -> str | None:
         for n in opts:
@@ -359,7 +334,6 @@ def build_corr_anoms(
             if mom.empty:
                 continue
 
-            # sum deltas on each side for this period
             l = mom[match_codes(mom["Account Code"], lp)]["Delta"].sum()
             r = mom[match_codes(mom["Account Code"], rp)]["Delta"].sum()
 
@@ -390,11 +364,10 @@ def build_anoms(
     anomalies: list[dict] = []
     materiality = CONFIG["materiality_vnd"]
 
-    # 1) Compute MoM frames
     bs_mom = compute_mom_with_trends(bs_data, bs_cols, CONFIG)
     pl_mom = compute_mom_with_trends(pl_data, pl_cols, CONFIG)
 
-    # 2) Balance Sheet rule: abs Δ >= materiality AND |%| > threshold
+    # Balance Sheet rule
     for _, row in bs_mom.iterrows():
         abs_delta = abs(row["Delta"])
         pct_change = row["Pct Change"]
@@ -411,7 +384,7 @@ def build_anoms(
                 "Notes": "",
             })
 
-    # 3) P/L rules split: Recurring vs Revenue/OPEX
+    # P/L rules split: Recurring vs Revenue/OPEX
     for _, row in pl_mom.iterrows():
         abs_delta = abs(row["Delta"])
         pct_change = row["Pct Change"]
@@ -438,7 +411,7 @@ def build_anoms(
                 "Notes": "",
             })
 
-    # 4) Correlation rules (optional sheet)
+    # Correlation rules (optional)
     combined = pd.concat([
         bs_mom[["Account Code","Period","Delta"]],
         pl_mom[["Account Code","Period","Delta"]],
@@ -450,18 +423,18 @@ def build_anoms(
     return pd.DataFrame(anomalies)
 
 # -----------------------------------------------------------------------------
-# File-level processing
+# File-level processing (IN-MEMORY)
 # -----------------------------------------------------------------------------
 
-def process_financial_tab(
-    xl_file: Path | str,
+def process_financial_tab_from_bytes(
+    xl_bytes: bytes,
     sheet_name: str,
     mode: str,
     subsidiary: str,
 ) -> tuple[pd.DataFrame, list[str]]:
-    """Load and clean one sheet ('BS Breakdown' or 'PL Breakdown')."""
-    header_row = detect_header_row(xl_file, sheet_name)
-    df = pd.read_excel(xl_file, sheet_name=sheet_name, header=header_row, dtype=str)
+    """Load and clean one sheet ('BS Breakdown' or 'PL Breakdown') from in-memory bytes."""
+    header_row = detect_header_row(xl_bytes, sheet_name)
+    df = pd.read_excel(io.BytesIO(xl_bytes), sheet_name=sheet_name, header=header_row, dtype=str)
     df = normalize_financial_col(df)
     df, month_cols = promote_row8(df, mode, subsidiary)
     df = fill_down_assign(df)
@@ -472,10 +445,10 @@ def process_financial_tab(
     return totals, month_cols
 
 
-def extract_subsidiary_name(xl_file: Path | str) -> str:
-    """Try to find a name on A2 of BS/PL sheets like 'Subsidiary: XYZ'. Fallback to filename prefix."""
+def extract_subsidiary_name_from_bytes(xl_bytes: bytes, fallback_filename: str) -> str:
+    """Try to find a name on A2 of BS/PL sheets like 'Subsidiary: XYZ'. Fallback to filename stem."""
     try:
-        wb = load_workbook(xl_file, read_only=True, data_only=True)
+        wb = load_workbook(io.BytesIO(xl_bytes), read_only=True, data_only=True)
         for sheet_name in ["BS Breakdown", "PL Breakdown"]:
             if sheet_name in wb.sheetnames:
                 sheet = wb[sheet_name]
@@ -486,15 +459,19 @@ def extract_subsidiary_name(xl_file: Path | str) -> str:
         wb.close()
     except Exception:
         pass
-    return Path(xl_file).stem.split("_")[0]
+    # fallback: filename before first underscore or dot
+    stem = fallback_filename.rsplit("/", 1)[-1]
+    stem = stem.split("\\")[-1]
+    stem = stem.split(".")[0]
+    return stem.split("_")[0] if "_" in stem else stem
 
+# -----------------------------------------------------------------------------
+# Excel formatting (IN-MEMORY, works on a worksheet not a saved file)
+# -----------------------------------------------------------------------------
 
-def apply_excel_formatting(filepath: Path | str, anomaly_df: pd.DataFrame, CONFIG: dict) -> None:
-    """Apply simple conditional fills to the 'Anomalies Summary' sheet for quick scanning."""
+def apply_excel_formatting_ws(ws, anomaly_df: pd.DataFrame, CONFIG: dict) -> None:
+    """Apply simple conditional fills directly on the 'Anomalies Summary' worksheet."""
     try:
-        wb = load_workbook(filepath)
-        ws = wb["Anomalies Summary"]
-
         critical_fill = PatternFill(start_color="FFCCCC", end_color="FFCCCC", fill_type="solid")
         warning_fill  = PatternFill(start_color="FFFF99", end_color="FFFF99", fill_type="solid")
         header_fill   = PatternFill(start_color="CCE5FF", end_color="CCE5FF", fill_type="solid")
@@ -504,148 +481,153 @@ def apply_excel_formatting(filepath: Path | str, anomaly_df: pd.DataFrame, CONFI
             cell.fill = header_fill
             cell.font = Font(bold=True)
 
+        # Find indexes for columns we care about
+        headers = [c.value for c in ws[1]]
+        try:
+            abs_idx = headers.index("Abs Change (VND)") + 1
+            trig_idx = headers.index("Trigger(s)") + 1
+        except ValueError:
+            # If columns not found, skip formatting
+            return
+
         # Rows
-        for row_idx, (_, row) in enumerate(anomaly_df.iterrows(), start=2):
-            abs_change = abs(row.get("Abs Change (VND)", 0))
-            trigger    = str(row.get("Trigger(s)", ""))
-
-            fill = None
-            if abs_change >= CONFIG["materiality_vnd"] * 5:
-                fill = critical_fill
-            elif "Correlation break" in trigger or abs_change >= CONFIG["materiality_vnd"] * 2:
-                fill = warning_fill
-
-            if fill:
-                for col_idx in range(1, len(anomaly_df.columns) + 1):
-                    ws.cell(row=row_idx, column=col_idx).fill = fill
-
-        wb.save(filepath)
-        wb.close()
+        for row_idx in range(2, ws.max_row + 1):
+            try:
+                abs_change = ws.cell(row=row_idx, column=abs_idx).value or 0
+                trigger    = str(ws.cell(row=row_idx, column=trig_idx).value or "")
+                fill = None
+                if abs_change >= DEFAULT_CONFIG["materiality_vnd"] * 5:
+                    fill = critical_fill
+                elif "Correlation break" in trigger or abs_change >= DEFAULT_CONFIG["materiality_vnd"] * 2:
+                    fill = warning_fill
+                if fill:
+                    for col_idx in range(1, len(headers) + 1):
+                        ws.cell(row=row_idx, column=col_idx).fill = fill
+            except Exception:
+                continue
     except Exception:
         # Formatting should never break the pipeline
         pass
 
 # -----------------------------------------------------------------------------
-# Orchestration
+# Orchestration (IN-MEMORY): Excel in -> ONE Excel bytes out
 # -----------------------------------------------------------------------------
 
-def process_all(config_overrides: dict | None = None) -> dict:
-    """Main entry point used by the API.
-    - Merges overrides into DEFAULT_CONFIG
-    - Reads mapping sheets from logic/Mapping_ACTIVE.xlsx
-    - Processes every *.xlsx in input/
-    - Writes per-file outputs and a consolidated workbook
-    - Optionally archives processed inputs
-
-    Returns a dict consumed by the API:
-      {
-        "total_anomalies": int,
-        "per_subsidiary": {sub: count, ...},
-        "generated_files": [filenames...],
-        "out_dir": "/abs/path/to/output"
-      }
+def process_all(
+    *,
+    excel_blobs: List[Tuple[str, bytes]],
+    mapping_blob: Optional[Tuple[str, bytes]] = None,
+    materiality_vnd: Optional[float] = None,
+    recurring_pct_threshold: Optional[float] = None,
+    revenue_opex_pct_threshold: Optional[float] = None,
+    bs_pct_threshold: Optional[float] = None,
+    recurring_code_prefixes: Optional[str] = None,
+    min_trend_periods: Optional[int] = None,
+) -> bytes:
     """
-    # 1) Merge config
+    Read all uploaded Excels (in-memory), run rules, produce ONE workbook with:
+      - 'Anomalies Summary' (all subsidiaries)
+      - Optional per-subsidiary BS/PL cleaned sheets (best-effort if present)
+    Return workbook bytes. NO filesystem interaction.
+    """
+    # Build runtime config overrides safely
     CONFIG = DEFAULT_CONFIG.copy()
-    if config_overrides:
-        CONFIG.update({k: v for k, v in config_overrides.items() if v is not None})
+    if materiality_vnd is not None:
+        CONFIG["materiality_vnd"] = float(materiality_vnd)
+    if recurring_pct_threshold is not None:
+        CONFIG["recurring_pct_threshold"] = float(recurring_pct_threshold)
+    if revenue_opex_pct_threshold is not None:
+        CONFIG["revenue_opex_pct_threshold"] = float(revenue_opex_pct_threshold)
+    if bs_pct_threshold is not None:
+        CONFIG["bs_pct_threshold"] = float(bs_pct_threshold)
+    if min_trend_periods is not None:
+        CONFIG["min_trend_periods"] = int(min_trend_periods)
+    if recurring_code_prefixes:
+        # allow "6321,635,515" or "6321|635|515"
+        parts = [p.strip() for p in str(recurring_code_prefixes).replace("|", ",").split(",") if p.strip()]
+        if parts:
+            CONFIG["recurring_code_prefixes"] = parts
 
-    # 2) Ensure directories
-    base = Path(CONFIG["base_dir"]).resolve()
-    in_dir   = base / "input"
-    out_dir  = base / "output"
-    arc_dir  = base / "archive"
-    logic_dir= base / "logic"
-    for d in (in_dir, out_dir, arc_dir, logic_dir):
-        d.mkdir(parents=True, exist_ok=True)
+    # Optional rules from mapping (if provided) — best-effort read
+    corr_rules = pd.DataFrame()
+    season_rules = pd.DataFrame()
+    if mapping_blob:
+        try:
+            xls = pd.ExcelFile(io.BytesIO(mapping_blob[1]))
+            if "Correlation Rules" in xls.sheet_names:
+                corr_rules = pd.read_excel(xls, sheet_name="Correlation Rules")
+            if "Seasonality Rules" in xls.sheet_names:
+                season_rules = pd.read_excel(xls, sheet_name="Seasonality Rules")
+        except Exception:
+            pass
 
-    # 3) Load mapping sheets (required)
-    mapping_file = logic_dir / "Mapping_ACTIVE.xlsx"
-    if not mapping_file.exists():
-        raise FileNotFoundError(f"Mapping file not found: {mapping_file}")
-    corr_rules  = pd.read_excel(mapping_file, sheet_name="CorrelationRules")
-    season_rules= pd.read_excel(mapping_file, sheet_name="Seasonality")
-
-    # 4) Process each input workbook
-    files = list(in_dir.glob("*.xlsx"))
     all_anoms: list[pd.DataFrame] = []
-    generated_files: list[str] = []
+    per_subsidiary_outputs: list[tuple[str, pd.DataFrame, pd.DataFrame]] = []
 
-    for excel_file in files:
-        sub = extract_subsidiary_name(excel_file)
+    for fname, fbytes in excel_blobs:
+        sub = extract_subsidiary_name_from_bytes(fbytes, fname)
 
-        # Clean both tabs; if either tab is missing, the loader will raise -> let API surface 500
-        bs, bs_cols = process_financial_tab(excel_file, "BS Breakdown", "BS", sub)
-        pl, pl_cols = process_financial_tab(excel_file, "PL Breakdown", "PL", sub)
+        # Try to read BS/PL breakdowns (skip gracefully if sheets missing)
+        bs_df, bs_cols = pd.DataFrame(), []
+        pl_df, pl_cols = pd.DataFrame(), []
+        try:
+            bs_df, bs_cols = process_financial_tab_from_bytes(fbytes, "BS Breakdown", mode="BS", subsidiary=sub)
+        except Exception:
+            pass
+        try:
+            pl_df, pl_cols = process_financial_tab_from_bytes(fbytes, "PL Breakdown", mode="PL", subsidiary=sub)
+        except Exception:
+            pass
 
-        # If both are empty, archive and skip
-        if bs.empty and pl.empty:
-            if CONFIG["archive_processed"]:
-                try:
-                    shutil.move(str(excel_file), str(arc_dir / excel_file.name))
-                except Exception:
-                    pass
-            continue
-
-        # Build anomalies
-        anoms = build_anoms(sub, bs, bs_cols, pl, pl_cols, corr_rules, season_rules, CONFIG)
-
-        # Write per-file output
-        timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
-        out_file = out_dir / f"Anomalies_{sub}_{timestamp}.xlsx"
-        with pd.ExcelWriter(out_file, engine="openpyxl") as writer:
-            if not bs.empty:
-                bs.to_excel(writer, sheet_name="BS_cleaned", index=False)
-            if not pl.empty:
-                pl.to_excel(writer, sheet_name="PL_cleaned", index=False)
-            anoms.to_excel(writer, sheet_name="Anomalies Summary", index=False)
-
-        if not anoms.empty:
-            apply_excel_formatting(out_file, anoms, CONFIG)
-
-        generated_files.append(out_file.name)
-
-        # Keep for consolidation
-        if not anoms.empty:
-            all_anoms.append(anoms.assign(Source_File=excel_file.name))
-
-        # Archive input
-        if CONFIG["archive_processed"]:
+        # If both empty, attempt to read the first sheet as a generic table (fallback)
+        if bs_df.empty and pl_df.empty:
             try:
-                shutil.move(str(excel_file), str(arc_dir / excel_file.name))
+                tmp = pd.read_excel(io.BytesIO(fbytes))
+                tmp = tmp if isinstance(tmp, pd.DataFrame) else pd.DataFrame(tmp)
+                # Create a simple MoM-like diff if we can detect 2+ numeric columns
+                num_cols = tmp.select_dtypes(include=[np.number]).columns.tolist()
+                if len(num_cols) >= 2:
+                    pl_df = tmp.copy()
+                    pl_cols = num_cols[:2]
             except Exception:
                 pass
 
-    # 5) Consolidate across all inputs (optional if there were anomalies)
-    total = 0
-    per_sub: dict[str, int] = {}
+        # Build anomalies
+        anoms = build_anoms(sub, bs_df, bs_cols, pl_df, pl_cols, corr_rules, season_rules, CONFIG)
+        if not anoms.empty:
+            all_anoms.append(anoms)
+
+        per_subsidiary_outputs.append((sub, bs_df, pl_df))
+
+    # ------------------------
+    # Build the output workbook
+    # ------------------------
+    wb = Workbook()
+    # a) Anomalies Summary
     if all_anoms:
-        consolidated = pd.concat(all_anoms, ignore_index=True)
-        timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
-        consolidated_file = out_dir / f"Anomalies_CONSOLIDATED_{timestamp}.xlsx"
-        with pd.ExcelWriter(consolidated_file, engine="openpyxl") as writer:
-            consolidated.to_excel(writer, sheet_name="Anomalies Summary", index=False)
-            summary = (
-                consolidated.groupby("Subsidiary")
-                .agg({"Account": "count", "Abs Change (VND)": "sum"})
-                .rename(columns={"Account": "Anomaly_Count", "Abs Change (VND)": "Total_Impact_VND"})
-            )
-            summary.to_excel(writer, sheet_name="Summary by Subsidiary")
-        apply_excel_formatting(consolidated_file, consolidated, CONFIG)
-        generated_files.append(consolidated_file.name)
+        summary = pd.concat(all_anoms, ignore_index=True)
+    else:
+        summary = pd.DataFrame(columns=[
+            "Subsidiary","Account","Period","Pct Change","Abs Change (VND)",
+            "Trigger(s)","Suggested likely cause","Status","Notes"
+        ])
+    ws_summary = wb.active
+    ws_summary.title = "Anomalies Summary"
+    for r in dataframe_to_rows(summary, index=False, header=True):
+        ws_summary.append(r)
+    apply_excel_formatting_ws(ws_summary, summary, CONFIG)
 
-        total = len(consolidated)
-        per_sub = (
-            consolidated.groupby("Subsidiary")["Account"]
-            .count()
-            .sort_values(ascending=False)
-            .to_dict()
-        )
+    # b) Per-subsidiary cleaned sheets (BS / PL)
+    for sub, bs_df, pl_df in per_subsidiary_outputs:
+        if not bs_df.empty:
+            ws = wb.create_sheet(title=f"{sub[:22]}_BS")  # Excel sheet name limit
+            for r in dataframe_to_rows(bs_df, index=False, header=True):
+                ws.append(r)
+        if not pl_df.empty:
+            ws = wb.create_sheet(title=f"{sub[:22]}_PL")
+            for r in dataframe_to_rows(pl_df, index=False, header=True):
+                ws.append(r)
 
-    # 6) Response payload for the API
-    return {
-        "total_anomalies": total,
-        "per_subsidiary": per_sub,
-        "generated_files": generated_files,
-        "out_dir": str((Path(CONFIG["base_dir"]) / "output").resolve()),
-    }
+    out = io.BytesIO()
+    wb.save(out)
+    return out.getvalue()
