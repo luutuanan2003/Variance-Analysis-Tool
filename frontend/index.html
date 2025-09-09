@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Variance Analysis Tool</title>
+<style>
+  :root { --bg:#0f172a; --card:#111827; --muted:#94a3b8; --text:#e5e7eb; --accent:#22c55e; --warn:#f59e0b; --err:#ef4444; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial; background:linear-gradient(180deg,#0b1223,#0f172a); color:var(--text); }
+  header { padding:24px 16px; text-align:center; }
+  header h1 { margin:0 0 6px; font-size:24px; }
+  header p { margin:0; color:var(--muted); font-size:14px; }
+  main { max-width:1000px; margin:0 auto; padding:16px; display:grid; gap:16px; grid-template-columns: 1fr; }
+  @media (min-width: 980px){ main { grid-template-columns: 1.2fr .8fr; } }
+
+  .card { background:rgba(17,24,39,.75); backdrop-filter: blur(8px); border:1px solid rgba(255,255,255,.06); border-radius:16px; padding:16px; box-shadow: 0 10px 30px rgba(0,0,0,.25);}
+  .card h2 { margin:0 0 12px; font-size:18px; }
+  .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .field { margin-bottom:12px; }
+  label { display:block; font-size:13px; color:var(--muted); margin-bottom:6px; }
+  input[type="file"], input[type="text"], input[type="number"] { width:100%; padding:10px 12px; border-radius:10px; border:1px solid rgba(255,255,255,.08); background:#0b1020; color:var(--text); }
+  .help { font-size:12px; color:var(--muted); margin-top:6px; }
+  .btn { appearance:none; border:1px solid rgba(255,255,255,.12); background:#0b1020; color:var(--text); padding:10px 14px; border-radius:12px; cursor:pointer; }
+  .btn.primary { background:linear-gradient(90deg,#22c55e,#16a34a); border:none; }
+  .btn:disabled { opacity:.6; cursor:not-allowed; }
+  .status { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; white-space: pre-wrap; background:#0b1020; border:1px solid rgba(255,255,255,.08); padding:10px; border-radius:10px; max-height:240px; overflow:auto; }
+  .pill { display:inline-flex; align-items:center; gap:6px; font-size:12px; background:#0b1020; border:1px solid rgba(255,255,255,.08); border-radius:999px; padding:6px 10px; color:var(--muted); }
+  .ok { color: var(--accent); }
+  .warn { color: var(--warn); }
+  .err { color: var(--err); }
+  ul.files { list-style:none; padding:0; margin:0; display:grid; gap:8px; }
+  ul.files li { display:flex; justify-content:space-between; align-items:center; gap:10px; background:#0b1020; border:1px solid rgba(255,255,255,.08); padding:10px 12px; border-radius:10px; }
+  a { color:#60a5fa; text-decoration:none; }
+  a:hover { text-decoration:underline; }
+  .grid-2 { display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
+  .sep { height:1px; background:rgba(255,255,255,.06); margin:10px 0; }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Variance Analysis Tool</h1>
+    <p>Upload Excel files, optionally tweak thresholds, and process.</p>
+  </header>
+
+  <main>
+    <!-- LEFT: upload + config -->
+    <section class="card">
+      <h2>Upload & Run</h2>
+
+      <div class="field">
+        <label for="excel">Excel file(s) <span class="help">Send one or more *.xlsx as <code>excel_files</code></span></label>
+        <input id="excel" type="file" accept=".xlsx" multiple />
+      </div>
+
+      <div class="field">
+        <label for="mapping">Mapping file (optional)</label>
+        <input id="mapping" type="file" accept=".xlsx" />
+        <div class="help">If omitted, the server will use its existing <em>logic/Mapping_ACTIVE.xlsx</em>.</div>
+      </div>
+
+      <div class="sep"></div>
+      <div class="grid-2">
+        <div class="field"><label for="materiality_vnd">materiality_vnd</label><input id="materiality_vnd" type="number" /></div>
+        <div class="field"><label for="archive_processed">archive_processed</label><input id="archive_processed" type="text" placeholder="true / false" /></div>
+        <div class="field"><label for="recurring_pct_threshold">recurring_pct_threshold</label><input id="recurring_pct_threshold" type="text" placeholder="0.05" /></div>
+        <div class="field"><label for="revenue_opex_pct_threshold">revenue_opex_pct_threshold</label><input id="revenue_opex_pct_threshold" type="text" placeholder="0.10" /></div>
+        <div class="field"><label for="bs_pct_threshold">bs_pct_threshold</label><input id="bs_pct_threshold" type="text" placeholder="0.05" /></div>
+        <div class="field"><label for="recurring_code_prefixes">recurring_code_prefixes</label><input id="recurring_code_prefixes" type="text" placeholder="6321,635,515" /></div>
+        <div class="field"><label for="min_trend_periods">min_trend_periods</label><input id="min_trend_periods" type="number" placeholder="3" /></div>
+        <div class="field"><label for="base_dir">base_dir</label><input id="base_dir" type="text" placeholder="(optional, default: server setting)" /></div>
+      </div>
+
+      <div class="sep"></div>
+      <div class="row">
+        <button id="runBtn" class="btn primary">Process</button>
+        <span id="liveStatus" class="pill">idle</span>
+      </div>
+
+      <div class="field" style="margin-top:12px;">
+        <label>Response</label>
+        <div id="response" class="status"></div>
+      </div>
+    </section>
+
+    <!-- RIGHT: health + outputs -->
+    <section class="card">
+      <h2>Server</h2>
+      <div class="row" style="margin-bottom:10px;">
+        <span id="healthPill" class="pill">health: unknown</span>
+        <button id="refreshHealth" class="btn">Check</button>
+      </div>
+
+      <div class="sep"></div>
+      <div class="row" style="justify-content:space-between; margin-bottom:10px;">
+        <h3 id="outputsTitle" style="margin:0;font-size:16px;">Outputs (this run)</h3>
+        <button id="showAllBtn" class="btn">Show all outputs</button>
+      </div>
+      <ul id="files" class="files"></ul>
+    </section>
+  </main>
+
+<script src="/frontend/script.js?v=1" defer></script>
+</body>
+</html>

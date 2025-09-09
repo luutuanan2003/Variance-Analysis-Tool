@@ -1,3 +1,6 @@
+fastapi
+uvicorn[standard]
 pandas
-openpyxl
 numpy
+openpyxl
+python-multipart
