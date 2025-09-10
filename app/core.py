@@ -38,6 +38,11 @@ DEFAULT_CONFIG: dict = {
     "bs_pct_threshold": 0.05,              # 5% for balance sheet
     "recurring_code_prefixes": ["6321", "635", "515"],
     "min_trend_periods": 3,
+
+    # NEW:
+    "gm_drop_threshold_pct": 0.01,         # 1% absolute drop triggers (e.g., 0.01 = 1pp)
+    "dep_pct_only_prefixes": ["217", "632"],  # treat these as %-only rules
+    "customer_column_hints": ["customer", "khách", "khach", "client", "buyer"],  # for 511* drilldown
 }
 
 MONTHS = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"]
@@ -45,6 +50,24 @@ MONTHS = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec
 # Patterns to recognize header row content that carries a period like "As of Feb-2024" etc.
 BS_PAT = re.compile(r'^\s*as\s*of\s*(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[\.\-\s]*(\d{2,4})\s*$', re.I)
 PL_PAT = re.compile(r'^\s*(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[\.\-\s]*(\d{2,4})\s*$', re.I)
+
+# -----------------------------------------------------------------------------
+# Helpers: find optional “customer” column 
+# -----------------------------------------------------------------------------
+def find_customer_column(df: pd.DataFrame, CONFIG: dict) -> Optional[str]:
+    """Try to find a customer dimension column in a cleaned PL frame.
+    Heuristic: any column whose name contains one of the configured hints.
+    """
+    if df is None or df.empty:
+        return None
+    cols = [str(c).strip() for c in df.columns]
+    hints = [h.lower() for h in CONFIG.get("customer_column_hints", [])]
+    for c in cols:
+        lc = c.lower()
+        if any(h in lc for h in hints):
+            return c
+    return None
+
 
 # -----------------------------------------------------------------------------
 # Helpers: period parsing / ordering
@@ -384,17 +407,30 @@ def build_anoms(
                 "Notes": "",
             })
 
-    # P/L rules split: Recurring vs Revenue/OPEX
+    # P/L rules split: Recurring vs Revenue/OPEX (+ special %-only for dep accounts)
+    dep_prefixes = [str(p) for p in CONFIG.get("dep_pct_only_prefixes", [])]
+
+    def is_dep_pct_only(code: object) -> bool:
+        cs = str(code)
+        return any(cs.startswith(p) for p in dep_prefixes)
+
     for _, row in pl_mom.iterrows():
         abs_delta = abs(row["Delta"])
         pct_change = row["Pct Change"]
-        account_class = classify_pl_account(row["Account Code"], CONFIG)
+        code = row["Account Code"]
+        account_class = classify_pl_account(code, CONFIG)
         trigger = ""
 
-        if account_class == "Recurring":
+        if is_dep_pct_only(code):
+            # Depreciation-style: %-only rule (ignore absolute materiality)
+            if (pd.notna(pct_change) and abs(pct_change) > CONFIG["recurring_pct_threshold"]):
+                trigger = "Depreciation % change > threshold"
+        elif account_class == "Recurring":
+            # Recurring needs BOTH big abs and big %
             if (abs_delta >= materiality and pd.notna(pct_change) and abs(pct_change) > CONFIG["recurring_pct_threshold"]):
                 trigger = "Recurring >5% & ≥1B"
         else:
+            # Revenue/OPEX needs EITHER big % or big abs
             if ((pd.notna(pct_change) and abs(pct_change) > CONFIG["revenue_opex_pct_threshold"]) or abs_delta >= materiality):
                 trigger = "Revenue/OPEX >10% or ≥1B"
 
@@ -411,16 +447,122 @@ def build_anoms(
                 "Notes": "",
             })
 
-    # Correlation rules (optional)
-    combined = pd.concat([
-        bs_mom[["Account Code","Period","Delta"]],
-        pl_mom[["Account Code","Period","Delta"]],
-    ], ignore_index=True)
-    combined["Norm_Period"] = combined["Period"].astype(str).map(normalize_period_label)
-    periods = sorted(set(combined["Norm_Period"]), key=month_key)
-    anomalies.extend(build_corr_anoms(sub, combined, corr_rules, periods, materiality))
+        # --- NEW: Gross Margin anomalies (uses PL only) ---
+        anomalies.extend(build_gross_margin_anoms(sub, pl_data, pl_cols, CONFIG))
 
-    return pd.DataFrame(anomalies)
+        # --- NEW: Revenue-by-customer anomalies (if a customer column exists) ---
+        anomalies.extend(build_revenue_by_customer_anoms(sub, pl_data, pl_cols, CONFIG))
+
+        # Correlation rules (optional)
+        combined = pd.concat([
+            bs_mom[["Account Code","Period","Delta"]],
+            pl_mom[["Account Code","Period","Delta"]],
+        ], ignore_index=True)
+        combined["Norm_Period"] = combined["Period"].astype(str).map(normalize_period_label)
+        periods = sorted(set(combined["Norm_Period"]), key=month_key)
+        anomalies.extend(build_corr_anoms(sub, combined, corr_rules, periods, materiality))
+
+        return pd.DataFrame(anomalies)
+
+def build_gross_margin_anoms(
+    sub: str,
+    pl_data: pd.DataFrame,
+    pl_cols: list[str],
+    CONFIG: dict,
+) -> list[dict]:
+    """Gross margin % = (Revenue(511*) - COGS(632*)) / Revenue(511*).
+    Flag when current GM% drops vs prior by >= gm_drop_threshold_pct (absolute).
+    """
+    items: list[dict] = []
+    if pl_data is None or pl_data.empty or len(pl_cols) < 2:
+        return items
+
+    # Sum revenue & COGS by month across all 511* / 632* rows
+    is_rev = pl_data["Account Code"].astype(str).str.startswith("511")
+    is_cogs = pl_data["Account Code"].astype(str).str.startswith("632")
+
+    rev = pl_data.loc[is_rev, pl_cols].sum(numeric_only=True)
+    cogs = pl_data.loc[is_cogs, pl_cols].sum(numeric_only=True)
+
+    # Walk month to month
+    for i in range(1, len(pl_cols)):
+        prev, cur = pl_cols[i-1], pl_cols[i]
+        rev_prev, rev_cur = float(rev.get(prev, 0.0) or 0.0), float(rev.get(cur, 0.0) or 0.0)
+        cogs_prev, cogs_cur = float(cogs.get(prev, 0.0) or 0.0), float(cogs.get(cur, 0.0) or 0.0)
+
+        if rev_prev == 0 or rev_cur == 0:
+            continue  # cannot compute a meaningful margin
+
+        gm_prev = (rev_prev - cogs_prev) / rev_prev
+        gm_cur  = (rev_cur  - cogs_cur)  / rev_cur
+        drop = gm_cur - gm_prev  # negative when margin worsens
+
+        if drop <= -abs(CONFIG.get("gm_drop_threshold_pct", 0.01)):
+            items.append({
+                "Subsidiary": sub,
+                "Account": "Gross Margin (511-632)",
+                "Period": normalize_period_label(cur),
+                "Pct Change": round((gm_cur - gm_prev) * 100, 2),
+                "Abs Change (VND)": "",
+                "Trigger(s)": f"Gross margin drop ≥ {int(CONFIG.get('gm_drop_threshold_pct', 0.01)*100)}%",
+                "Suggested likely cause": "COGS moved vs revenue; check pricing, mix, or timing.",
+                "Status": "Needs Review",
+                "Notes": f"GM {normalize_period_label(prev)}={gm_prev:.2%} → {normalize_period_label(cur)}={gm_cur:.2%}",
+            })
+
+    return items
+
+def build_revenue_by_customer_anoms(
+    sub: str,
+    pl_data: pd.DataFrame,
+    pl_cols: list[str],
+    CONFIG: dict,
+) -> list[dict]:
+    """If pl_data includes a customer column, compute MoM by customer for 511* rows."""
+    items: list[dict] = []
+    if pl_data is None or pl_data.empty or len(pl_cols) < 2:
+        return items
+
+    cust_col = find_customer_column(pl_data, CONFIG)
+    if not cust_col or cust_col not in pl_data.columns:
+        return items  # nothing to do
+
+    # Filter revenue rows
+    rev_df = pl_data[pl_data["Account Code"].astype(str).str.startswith("511")].copy()
+    if rev_df.empty:
+        return items
+
+    # Group by customer per month; then compute MoM % and abs deltas
+    g = rev_df.groupby(cust_col)[pl_cols].sum(numeric_only=True)
+    customers = g.index.tolist()
+
+    for cust in customers:
+        series = g.loc[cust]
+        for i in range(1, len(pl_cols)):
+            prev, cur = pl_cols[i-1], pl_cols[i]
+            prev_v = float(series.get(prev, 0.0) or 0.0)
+            cur_v  = float(series.get(cur, 0.0) or 0.0)
+            delta  = cur_v - prev_v
+            pct    = (delta / prev_v) if prev_v != 0 else np.nan
+
+            # Use the same Revenue/OPEX rule: % > threshold OR abs ≥ materiality
+            cond_pct = (pd.notna(pct) and abs(pct) > CONFIG["revenue_opex_pct_threshold"])
+            cond_abs = (abs(delta) >= CONFIG["materiality_vnd"])
+            if cond_pct or cond_abs:
+                items.append({
+                    "Subsidiary": sub,
+                    "Account": f"Revenue 511* — Customer: {cust}",
+                    "Period": normalize_period_label(cur),
+                    "Pct Change": round(pct*100, 2) if pd.notna(pct) else "",
+                    "Abs Change (VND)": int(delta),
+                    "Trigger(s)": "Revenue by customer variance",
+                    "Suggested likely cause": "Customer-level shift; check orders, churn, or timing.",
+                    "Status": "Needs Review",
+                    "Notes": f"{normalize_period_label(prev)}={int(prev_v):,} → {normalize_period_label(cur)}={int(cur_v):,}",
+                })
+
+    return items
+
 
 # -----------------------------------------------------------------------------
 # File-level processing (IN-MEMORY)
@@ -523,6 +665,11 @@ def process_all(
     bs_pct_threshold: Optional[float] = None,
     recurring_code_prefixes: Optional[str] = None,
     min_trend_periods: Optional[int] = None,
+    gm_drop_threshold_pct: Optional[float] = None,     # already added earlier
+
+    # 👇 NEW
+    dep_pct_only_prefixes: Optional[str] = None,
+    customer_column_hints: Optional[str] = None,
 ) -> bytes:
     """
     Read all uploaded Excels (in-memory), run rules, produce ONE workbook with:
@@ -530,7 +677,6 @@ def process_all(
       - Optional per-subsidiary BS/PL cleaned sheets (best-effort if present)
     Return workbook bytes. NO filesystem interaction.
     """
-    # Build runtime config overrides safely
     CONFIG = DEFAULT_CONFIG.copy()
     if materiality_vnd is not None:
         CONFIG["materiality_vnd"] = float(materiality_vnd)
@@ -543,10 +689,22 @@ def process_all(
     if min_trend_periods is not None:
         CONFIG["min_trend_periods"] = int(min_trend_periods)
     if recurring_code_prefixes:
-        # allow "6321,635,515" or "6321|635|515"
         parts = [p.strip() for p in str(recurring_code_prefixes).replace("|", ",").split(",") if p.strip()]
         if parts:
             CONFIG["recurring_code_prefixes"] = parts
+    if gm_drop_threshold_pct is not None:
+        CONFIG["gm_drop_threshold_pct"] = float(gm_drop_threshold_pct)
+
+    # 👇 NEW overrides
+    if dep_pct_only_prefixes:
+        parts = [p.strip() for p in str(dep_pct_only_prefixes).replace("|", ",").split(",") if p.strip()]
+        if parts:
+            CONFIG["dep_pct_only_prefixes"] = parts
+
+    if customer_column_hints:
+        parts = [p.strip() for p in str(customer_column_hints).replace("|", ",").split(",") if p.strip()]
+        if parts:
+            CONFIG["customer_column_hints"] = parts
 
     # Optional rules from mapping (if provided) — best-effort read
     corr_rules = pd.DataFrame()

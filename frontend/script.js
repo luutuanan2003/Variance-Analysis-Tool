@@ -94,18 +94,19 @@ async function runProcess() {
       return;
     }
 
+    // Build FormData with all config fields, including gm_drop_threshold_pct
     const fd = new FormData();
-    for (const f of excels) fd.append("excel_files", f);
-    const mapping = el("mapping").files?.[0];
+    for (const f of document.getElementById("excel").files) fd.append("excel_files", f);
+    const mapping = document.getElementById("mapping").files[0];
     if (mapping) fd.append("mapping_file", mapping);
 
-    // keep desired params (archive_processed/base_dir already removed)
-    addIfPresent(fd, "materiality_vnd", el("materiality_vnd").value);
-    addIfPresent(fd, "recurring_pct_threshold", el("recurring_pct_threshold").value);
-    addIfPresent(fd, "revenue_opex_pct_threshold", el("revenue_opex_pct_threshold").value);
-    addIfPresent(fd, "bs_pct_threshold", el("bs_pct_threshold").value);
-    addIfPresent(fd, "recurring_code_prefixes", el("recurring_code_prefixes").value);
-    addIfPresent(fd, "min_trend_periods", el("min_trend_periods").value);
+    fd.append("materiality_vnd", document.getElementById("materiality_vnd").value);
+    fd.append("recurring_pct_threshold", document.getElementById("recurring_pct_threshold").value);
+    fd.append("revenue_opex_pct_threshold", document.getElementById("revenue_opex_pct_threshold").value);
+    fd.append("bs_pct_threshold", document.getElementById("bs_pct_threshold").value);
+    fd.append("recurring_code_prefixes", document.getElementById("recurring_code_prefixes").value);
+    fd.append("min_trend_periods", document.getElementById("min_trend_periods").value);
+    fd.append("gm_drop_threshold_pct", document.getElementById("gm_drop_threshold_pct").value); // 👈 NEW
 
     appendLog("POST /process …");
     const resp = await fetch(`/process`, { method: "POST", body: fd });

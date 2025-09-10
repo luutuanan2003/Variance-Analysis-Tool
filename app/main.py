@@ -59,6 +59,11 @@ async def process(
     bs_pct_threshold: Optional[float] = Form(None),
     recurring_code_prefixes: Optional[str] = Form(None),
     min_trend_periods: Optional[int] = Form(None),
+    gm_drop_threshold_pct: Optional[float] = Form(None),   # 👈 NEW
+
+    # 👇 NEW
+    dep_pct_only_prefixes: Optional[str] = Form(None),             # "217,632" or "217|632"
+    customer_column_hints: Optional[str] = Form(None),             # "customer,khách,khach,client,buyer"
 ):
     try:
         # Read uploads fully into memory (no saving)
@@ -80,6 +85,11 @@ async def process(
             bs_pct_threshold=bs_pct_threshold,
             recurring_code_prefixes=recurring_code_prefixes,
             min_trend_periods=min_trend_periods,
+            gm_drop_threshold_pct=gm_drop_threshold_pct,  # 👈 NEW
+
+            # 👇 NEW pass-through
+            dep_pct_only_prefixes=dep_pct_only_prefixes,
+            customer_column_hints=customer_column_hints,
         )
 
         return StreamingResponse(

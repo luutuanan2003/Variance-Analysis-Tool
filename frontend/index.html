@@ -1,102 +1,206 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Variance Analysis Tool</title>
-<style>
-  :root { --bg:#0f172a; --card:#111827; --muted:#94a3b8; --text:#e5e7eb; --accent:#22c55e; --warn:#f59e0b; --err:#ef4444; }
-  * { box-sizing: border-box; }
-  body { margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial; background:linear-gradient(180deg,#0b1223,#0f172a); color:var(--text); }
-  header { padding:24px 16px; text-align:center; }
-  header h1 { margin:0 0 6px; font-size:24px; }
-  header p { margin:0; color:var(--muted); font-size:14px; }
-  main { max-width:1000px; margin:0 auto; padding:16px; display:grid; gap:16px; grid-template-columns: 1fr; }
-  @media (min-width: 980px){ main { grid-template-columns: 1.2fr .8fr; } }
-
-  .card { background:rgba(17,24,39,.75); backdrop-filter: blur(8px); border:1px solid rgba(255,255,255,.06); border-radius:16px; padding:16px; box-shadow: 0 10px 30px rgba(0,0,0,.25);}
-  .card h2 { margin:0 0 12px; font-size:18px; }
-  .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
-  .field { margin-bottom:12px; }
-  label { display:block; font-size:13px; color:var(--muted); margin-bottom:6px; }
-  input[type="file"], input[type="text"], input[type="number"] { width:100%; padding:10px 12px; border-radius:10px; border:1px solid rgba(255,255,255,.08); background:#0b1020; color:var(--text); }
-  .help { font-size:12px; color:var(--muted); margin-top:6px; }
-  .btn { appearance:none; border:1px solid rgba(255,255,255,.12); background:#0b1020; color:var(--text); padding:10px 14px; border-radius:12px; cursor:pointer; }
-  .btn.primary { background:linear-gradient(90deg,#22c55e,#16a34a); border:none; }
-  .btn:disabled { opacity:.6; cursor:not-allowed; }
-  .status { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; white-space: pre-wrap; background:#0b1020; border:1px solid rgba(255,255,255,.08); padding:10px; border-radius:10px; max-height:240px; overflow:auto; }
-  .pill { display:inline-flex; align-items:center; gap:6px; font-size:12px; background:#0b1020; border:1px solid rgba(255,255,255,.08); border-radius:999px; padding:6px 10px; color:var(--muted); }
-  .ok { color: var(--accent); }
-  .warn { color: var(--warn); }
-  .err { color: var(--err); }
-  ul.files { list-style:none; padding:0; margin:0; display:grid; gap:8px; }
-  ul.files li { display:flex; justify-content:space-between; align-items:center; gap:10px; background:#0b1020; border:1px solid rgba(255,255,255,.08); padding:10px 12px; border-radius:10px; }
-  a { color:#60a5fa; text-decoration:none; }
-  a:hover { text-decoration:underline; }
-  .grid-2 { display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
-  .sep { height:1px; background:rgba(255,255,255,.06); margin:10px 0; }
-</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Variance Analysis Tool</title>
+  <link rel="stylesheet" href="/frontend/styles.css?v=2" />
 </head>
 <body>
   <header>
-    <h1>Variance Analysis Tool</h1>
-    <p>Upload Excel files, optionally tweak thresholds, and process.</p>
+    <div class="header-main">
+      <img src="/frontend/assets/logo.png" alt="Logo" class="logo" />
+      <h1 data-i18n="title">Variance Analysis Tool</h1>
+      <div class="lang-toggle" role="tablist" aria-label="Language">
+        <button id="lang-en" class="btn small active" role="tab" aria-selected="true">EN</button>
+        <button id="lang-vi" class="btn small" role="tab" aria-selected="false">VI</button>
+      </div>
+    </div>
+    <p class="subtitle" data-i18n="subtitle">Upload Excel → Process → Download</p>
   </header>
 
   <main>
     <!-- LEFT: upload + config -->
     <section class="card">
-      <h2>Upload & Run</h2>
+      <h2 data-i18n="uploadRun">Upload & Run</h2>
 
       <div class="field">
-        <label for="excel">Excel file(s) <span class="help">Send one or more *.xlsx as <code>excel_files</code></span></label>
-        <input id="excel" type="file" accept=".xlsx" multiple />
+        <label for="excel" data-i18n="excelLabel">Excel file(s)</label>
+        <input id="excel" type="file" accept=".xlsx" multiple title=".xlsx" />
+        <div class="help" data-i18n="excelHelp">Select one or more .xlsx files</div>
       </div>
 
       <div class="field">
-        <label for="mapping">Mapping file (optional)</label>
+        <label for="mapping" data-i18n="mappingLabel">Mapping (optional)</label>
         <input id="mapping" type="file" accept=".xlsx" />
-        <div class="help">If omitted, the server will use its existing <em>logic/Mapping_ACTIVE.xlsx</em>.</div>
+        <div class="help" data-i18n="mappingHelp">Skip if you don’t use correlation rules</div>
       </div>
 
       <div class="sep"></div>
+
       <div class="grid-2">
-        <div class="field"><label for="materiality_vnd">materiality_vnd</label><input id="materiality_vnd" type="number" /></div>
-        <div class="field"><label for="recurring_pct_threshold">recurring_pct_threshold</label><input id="recurring_pct_threshold" type="text" placeholder="0.05" /></div>
-        <div class="field"><label for="revenue_opex_pct_threshold">revenue_opex_pct_threshold</label><input id="revenue_opex_pct_threshold" type="text" placeholder="0.10" /></div>
-        <div class="field"><label for="bs_pct_threshold">bs_pct_threshold</label><input id="bs_pct_threshold" type="text" placeholder="0.05" /></div>
-        <div class="field"><label for="recurring_code_prefixes">recurring_code_prefixes</label><input id="recurring_code_prefixes" type="text" placeholder="6321,635,515" /></div>
-        <div class="field"><label for="min_trend_periods">min_trend_periods</label><input id="min_trend_periods" type="number" placeholder="3" /></div>
+        <div class="field">
+          <label for="materiality_vnd" data-i18n="materiality">Materiality (VND)</label>
+          <input id="materiality_vnd" type="number" placeholder="1000000000" />
+        </div>
+
+        <div class="field">
+          <label for="recurring_pct_threshold" data-i18n="recurringPct">Recurring %</label>
+          <input id="recurring_pct_threshold" type="text" placeholder="0.05" />
+        </div>
+
+        <div class="field">
+          <label for="revenue_opex_pct_threshold" data-i18n="revenuePct">Revenue/OPEX %</label>
+          <input id="revenue_opex_pct_threshold" type="text" placeholder="0.10" />
+        </div>
+
+        <div class="field">
+          <label for="bs_pct_threshold" data-i18n="bsPct">Balance Sheet %</label>
+          <input id="bs_pct_threshold" type="text" placeholder="0.05" />
+        </div>
+
+        <div class="field">
+          <label for="recurring_code_prefixes" data-i18n="prefixes">Recurring code prefixes</label>
+          <input id="recurring_code_prefixes" type="text" placeholder="6321,635,515" />
+        </div>
+
+        <div class="field">
+          <label for="min_trend_periods" data-i18n="minTrend">Min trend periods</label>
+          <input id="min_trend_periods" type="number" placeholder="3" />
+        </div>
+
+        <div class="field">
+          <label for="gm_drop_threshold_pct" data-i18n="gmDropLabel">gm_drop_threshold_pct</label>
+          <input id="gm_drop_threshold_pct" type="text" placeholder="0.01" />
+          <div class="help" data-i18n="gmDropHelp">Ví dụ: 0.01 = cảnh báo khi GM% giảm ≥ 1 điểm %.</div>
+        </div>
+
+        <div class="field">
+          <label for="dep_pct_only_prefixes" data-i18n="depPctLabel">dep_pct_only_prefixes</label>
+          <input id="dep_pct_only_prefixes" type="text" placeholder="217,632" />
+          <div class="help" data-i18n="depPctHelp">Các mã áp dụng luật %-only, cách nhau bằng dấu phẩy.</div>
+        </div>
+
+        <div class="field">
+          <label for="customer_column_hints" data-i18n="customerHintLabel">customer_column_hints</label>
+          <input id="customer_column_hints" type="text" placeholder="customer,khách,khach,client,buyer" />
+          <div class="help" data-i18n="customerHintHelp">Tên cột gợi ý để nhận diện “khách hàng”.</div>
+        </div>
       </div>
 
       <div class="sep"></div>
+
       <div class="row">
-        <button id="runBtn" class="btn primary">Process</button>
-        <span id="liveStatus" class="pill">idle</span>
+        <button id="runBtn" class="btn primary" data-i18n="processBtn">Process</button>
+        <span id="liveStatus" class="pill" data-i18n="idle">Idle</span>
       </div>
 
       <div class="field" style="margin-top:12px;">
-        <label>Response</label>
-        <div id="response" class="status"></div>
+        <label data-i18n="response">Response</label>
+        <div id="response" class="status" aria-live="polite"></div>
       </div>
     </section>
 
     <!-- RIGHT: health + outputs -->
     <section class="card">
-      <h2>Server</h2>
+      <h2 data-i18n="server">Server</h2>
       <div class="row" style="margin-bottom:10px;">
-        <span id="healthPill" class="pill">health: unknown</span>
-        <button id="refreshHealth" class="btn">Check</button>
+        <span id="healthPill" class="pill" data-i18n="healthUnknown">Health: unknown</span>
+        <button id="refreshHealth" class="btn" data-i18n="check">Check</button>
       </div>
 
       <div class="sep"></div>
+
       <div class="row" style="margin-bottom:10px;">
-        <h3 id="outputsTitle" style="margin:0;font-size:16px;">Outputs</h3>
+        <h3 id="outputsTitle" style="margin:0;font-size:16px;" data-i18n="downloadThisRun">Download (this run)</h3>
       </div>
-      <ul id="files" class="files"></ul>
+      <ul id="files" class="files" aria-live="polite"></ul>
     </section>
   </main>
 
-<script src="/frontend/script.js?v=1" defer></script>
+  <script>
+    // Tiny i18n (no deps). Default EN; click VI to switch.
+    const dict = {
+      en: {
+        title: "Variance Analysis Tool",
+        subtitle: "Upload Excel → Process → Download",
+        uploadRun: "Upload & Run",
+        excelLabel: "Excel file(s)",
+        excelHelp: "Select one or more .xlsx files",
+        mappingLabel: "Mapping (optional)",
+        mappingHelp: "Skip if you don’t use correlation rules",
+        materiality: "Materiality (VND)",
+        recurringPct: "Recurring %",
+        revenuePct: "Revenue/OPEX %",
+        bsPct: "Balance Sheet %",
+        prefixes: "Recurring code prefixes",
+        minTrend: "Min trend periods",
+        processBtn: "Process",
+        idle: "Idle",
+        response: "Response",
+        server: "Server",
+        healthUnknown: "Health: unknown",
+        check: "Check",
+        downloadThisRun: "Download (this run)",
+        gmDropLabel: "gm_drop_threshold_pct",
+        gmDropHelp: "E.g.: 0.01 = alert when GM% drops ≥ 1 percentage point.",
+        depPctLabel: "dep_pct_only_prefixes",
+        depPctHelp: "Codes for %-only rule, separated by commas.",
+        customerHintLabel: "customer_column_hints",
+        customerHintHelp: "Column names to identify 'customer'."
+      },
+      vi: {
+        title: "Công cụ phân tích biến động",
+        subtitle: "Tải Excel → Xử lý → Tải xuống",
+        uploadRun: "Tải tệp & Chạy",
+        excelLabel: "Tệp Excel",
+        excelHelp: "Chọn một hoặc nhiều tệp .xlsx",
+        mappingLabel: "Tệp quy tắc (tùy chọn)",
+        mappingHelp: "Bỏ qua nếu không dùng quy tắc tương quan",
+        materiality: "Ngưỡng quan trọng (VND)",
+        recurringPct: "% Định kỳ",
+        revenuePct: "% Doanh thu/Chi phí",
+        bsPct: "% Bảng CĐKT",
+        prefixes: "Tiền tố mã định kỳ",
+        minTrend: "Số kỳ tối thiểu",
+        processBtn: "Xử lý",
+        idle: "Chờ",
+        response: "Phản hồi",
+        server: "Máy chủ",
+        healthUnknown: "Trạng thái: chưa rõ",
+        check: "Kiểm tra",
+        downloadThisRun: "Tải xuống (lượt này)",
+        gmDropLabel: "Ngưỡng giảm GM (%)",
+        gmDropHelp: "Ví dụ: 0.01 = cảnh báo khi GM% giảm ≥ 1 điểm %.",
+        depPctLabel: "Mã áp dụng luật khấu hao (%)",
+        depPctHelp: "Các mã áp dụng luật %-only, cách nhau bằng dấu phẩy.",
+        customerHintLabel: "Gợi ý cột khách hàng",
+        customerHintHelp: "Tên cột gợi ý để nhận diện “khách hàng”."
+      }
+    };
+
+    function setLang(lang) {
+      const strings = dict[lang] || dict.en;
+      document.querySelectorAll("[data-i18n]").forEach(el => {
+        const key = el.getAttribute("data-i18n");
+        if (strings[key]) el.textContent = strings[key];
+      });
+      // Toggle active state
+      document.getElementById("lang-en").classList.toggle("active", lang === "en");
+      document.getElementById("lang-vi").classList.toggle("active", lang === "vi");
+      document.getElementById("lang-en").setAttribute("aria-selected", lang === "en");
+      document.getElementById("lang-vi").setAttribute("aria-selected", lang === "vi");
+      // Update <html lang>
+      document.documentElement.setAttribute("lang", lang);
+    }
+
+    document.addEventListener("DOMContentLoaded", () => {
+      document.getElementById("lang-en").addEventListener("click", () => setLang("en"));
+      document.getElementById("lang-vi").addEventListener("click", () => setLang("vi"));
+      setLang("en"); // default
+    });
+  </script>
+
+  <script src="/frontend/script.js?v=1" defer></script>
 </body>
 </html>
