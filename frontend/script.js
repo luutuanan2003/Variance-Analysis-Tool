@@ -16,7 +16,9 @@ function appendLog(msg) {
 }
 function clearLog() { const div = el("response"); if (div) div.textContent = ""; }
 function addIfPresent(fd, key, value) {
-  if (value !== undefined && value !== null && String(value).trim() !== "") fd.append(key, value);
+  if (value !== undefined && value !== null && String(value).trim() !== "") {
+    fd.append(key, value);
+  }
 }
 function renderLatestFiles(files) {
   const list = el("files"); if (!list) return;
@@ -100,13 +102,16 @@ async function runProcess() {
     const mapping = document.getElementById("mapping").files[0];
     if (mapping) fd.append("mapping_file", mapping);
 
-    fd.append("materiality_vnd", document.getElementById("materiality_vnd").value);
-    fd.append("recurring_pct_threshold", document.getElementById("recurring_pct_threshold").value);
-    fd.append("revenue_opex_pct_threshold", document.getElementById("revenue_opex_pct_threshold").value);
-    fd.append("bs_pct_threshold", document.getElementById("bs_pct_threshold").value);
-    fd.append("recurring_code_prefixes", document.getElementById("recurring_code_prefixes").value);
-    fd.append("min_trend_periods", document.getElementById("min_trend_periods").value);
-    fd.append("gm_drop_threshold_pct", document.getElementById("gm_drop_threshold_pct").value); // 👈 NEW
+    // Only append if not empty
+    addIfPresent(fd, "materiality_vnd", document.getElementById("materiality_vnd").value);
+    addIfPresent(fd, "recurring_pct_threshold", document.getElementById("recurring_pct_threshold").value);
+    addIfPresent(fd, "revenue_opex_pct_threshold", document.getElementById("revenue_opex_pct_threshold").value);
+    addIfPresent(fd, "bs_pct_threshold", document.getElementById("bs_pct_threshold").value);
+    addIfPresent(fd, "recurring_code_prefixes", document.getElementById("recurring_code_prefixes").value);
+    addIfPresent(fd, "min_trend_periods", document.getElementById("min_trend_periods").value);
+    addIfPresent(fd, "gm_drop_threshold_pct", document.getElementById("gm_drop_threshold_pct").value);
+    addIfPresent(fd, "dep_pct_only_prefixes", document.getElementById("dep_pct_only_prefixes").value);
+    addIfPresent(fd, "customer_column_hints", document.getElementById("customer_column_hints").value);
 
     appendLog("POST /process …");
     const resp = await fetch(`/process`, { method: "POST", body: fd });
