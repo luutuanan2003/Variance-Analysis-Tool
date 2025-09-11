@@ -1,0 +1,8 @@
+# Keep image small
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+__MACOSX/
+prototype/
