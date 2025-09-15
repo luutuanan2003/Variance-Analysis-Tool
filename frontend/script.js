@@ -5,13 +5,14 @@ const API_BASE = ""; // empty = relative to current host
 function el(id) { return document.getElementById(id); }
 function currentLang() { return document.documentElement.getAttribute("lang") || "en"; }
 function t(key) {
-  const d = (window.dict && dict[currentLang()]) || dict.en;
+  const d = (window.dict && window.dict[currentLang()]) || (window.dict && window.dict.en) || {};
   return (d && d[key]) || key;
 }
 function setPill(node, textKey, state) {
   if (!node) return;
   node.textContent = t(textKey);
   node.className = "pill";
+  node.classList.remove("ok", "warn", "err");
   if (state) node.classList.add(state);
 }
 function appendLog(msg) {
@@ -139,6 +140,31 @@ async function runProcess() {
 }
 
 // =================== INIT ===================
+function injectClearLogButton() {
+  const responseBox = el("response");
+  if (responseBox && !el("clearLogBtn")) {
+    const btn = document.createElement("button");
+    btn.id = "clearLogBtn";
+    btn.className = "btn";
+    btn.style.marginTop = "8px";
+    btn.setAttribute("data-i18n", "clearLog");
+    btn.textContent = t("clearLog");
+    btn.addEventListener("click", clearLog);
+    responseBox.parentElement.appendChild(btn);
+  }
+}
+
+function seedNoFilesPlaceholder() {
+  const list = el("files");
+  if (!list) return;
+  if (list.children.length === 0) {
+    const li = document.createElement("li");
+    li.setAttribute("data-i18n", "noFilesYet");
+    li.textContent = t("noFilesYet");
+    list.appendChild(li);
+  }
+}
+
 function bindEvents() {
   const runBtn = el("runBtn");
   const refreshHealthBtn = el("refreshHealth");
@@ -146,29 +172,15 @@ function bindEvents() {
   if (runBtn) runBtn.addEventListener("click", runProcess);
   if (refreshHealthBtn) refreshHealthBtn.addEventListener("click", checkHealth);
 
-  // Optional: "Clear log" button under Response box
-  const responseBox = el("response");
-  if (responseBox && !el("clearLogBtn")) {
-    const btn = document.createElement("button");
-    btn.id = "clearLogBtn";
-    btn.className = "btn";
-    btn.style.marginTop = "8px";
-    btn.textContent = "Clear log";
-    btn.addEventListener("click", clearLog);
-    responseBox.parentElement.appendChild(btn);
-  }
+  injectClearLogButton();
 }
 
 document.addEventListener("DOMContentLoaded", () => {
   bindEvents();
   checkHealth();
+  seedNoFilesPlaceholder();
 
-  const list = el("files");
-  if (list) {
-    const li = document.createElement("li");
-    li.textContent = t("noFilesYet");
-    list.appendChild(li);
-  }
+  // Keep outputs header localized (it has data-i18n already)
   const title = el("outputsTitle");
   if (title) title.textContent = t("downloadThisRun");
 });
