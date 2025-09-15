@@ -72,19 +72,19 @@
         <div class="field">
           <label for="gm_drop_threshold_pct" data-i18n="gmDropLabel">gm_drop_threshold_pct</label>
           <input id="gm_drop_threshold_pct" type="text" placeholder="0.01" />
-          <div class="help" data-i18n="gmDropHelp">Ví dụ: 0.01 = cảnh báo khi GM% giảm ≥ 1 điểm %.</div>
+          <div class="help" data-i18n="gmDropHelp">E.g.: 0.01 = alert when GM% drops ≥ 1 percentage point.</div>
         </div>
 
         <div class="field">
           <label for="dep_pct_only_prefixes" data-i18n="depPctLabel">dep_pct_only_prefixes</label>
           <input id="dep_pct_only_prefixes" type="text" placeholder="217,632" />
-          <div class="help" data-i18n="depPctHelp">Các mã áp dụng luật %-only, cách nhau bằng dấu phẩy.</div>
+          <div class="help" data-i18n="depPctHelp">Codes for %-only rule, separated by commas.</div>
         </div>
 
         <div class="field">
           <label for="customer_column_hints" data-i18n="customerHintLabel">customer_column_hints</label>
           <input id="customer_column_hints" type="text" placeholder="customer,khách,khach,client,buyer" />
-          <div class="help" data-i18n="customerHintHelp">Tên cột gợi ý để nhận diện “khách hàng”.</div>
+          <div class="help" data-i18n="customerHintHelp">Column names to identify 'customer'.</div>
         </div>
       </div>
 
@@ -137,9 +137,17 @@
         minTrend: "Min trend periods",
         processBtn: "Process",
         idle: "Idle",
+        uploading: "Uploading…",
+        processing: "Processing…",
+        done: "Done",
+        failed: "Failed",
+        noFilesYet: "No files yet.",
         response: "Response",
         server: "Server",
         healthUnknown: "Health: unknown",
+        healthOk: "Health: ok",
+        healthDegraded: "Health: degraded",
+        healthDown: "Health: down",
         check: "Check",
         downloadThisRun: "Download (this run)",
         gmDropLabel: "gm_drop_threshold_pct",
@@ -165,9 +173,17 @@
         minTrend: "Số kỳ tối thiểu",
         processBtn: "Xử lý",
         idle: "Chờ",
+        uploading: "Đang tải…",
+        processing: "Đang xử lý…",
+        done: "Hoàn tất",
+        failed: "Lỗi",
+        noFilesYet: "Chưa có tệp.",
         response: "Phản hồi",
         server: "Máy chủ",
         healthUnknown: "Trạng thái: chưa rõ",
+        healthOk: "Trạng thái: tốt",
+        healthDegraded: "Trạng thái: suy giảm",
+        healthDown: "Trạng thái: ngừng",
         check: "Kiểm tra",
         downloadThisRun: "Tải xuống (lượt này)",
         gmDropLabel: "Ngưỡng giảm GM (%)",
@@ -185,12 +201,10 @@
         const key = el.getAttribute("data-i18n");
         if (strings[key]) el.textContent = strings[key];
       });
-      // Toggle active state
       document.getElementById("lang-en").classList.toggle("active", lang === "en");
       document.getElementById("lang-vi").classList.toggle("active", lang === "vi");
       document.getElementById("lang-en").setAttribute("aria-selected", lang === "en");
       document.getElementById("lang-vi").setAttribute("aria-selected", lang === "vi");
-      // Update <html lang>
       document.documentElement.setAttribute("lang", lang);
     }
 
