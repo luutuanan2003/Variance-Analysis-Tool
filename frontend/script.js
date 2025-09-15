@@ -26,6 +26,20 @@ function addIfPresent(fd, key, value) {
   }
 }
 
+// Accept "0.05", "5%", or "5"→0.05
+function normPct(val) {
+  if (val == null) return "";
+  const s = String(val).trim();
+  if (s === "") return "";
+  if (s.endsWith("%")) {
+    const num = parseFloat(s.replace("%",""));
+    return isNaN(num) ? "" : String(num / 100);
+  }
+  const num = parseFloat(s);
+  if (isNaN(num)) return "";
+  return (num > 1 && num <= 100) ? String(num / 100) : String(num);
+}
+
 // =================== HEALTH ===================
 async function checkHealth() {
   const pill = el("healthPill");
@@ -55,7 +69,7 @@ async function runProcess() {
   try {
     const excels = el("excel").files;
     if (!excels || excels.length === 0) {
-      appendLog("Please choose at least one .xlsx file.");
+      appendLog(t("noExcelSelected"));
       setPill(el("liveStatus"), "idle", "");
       btn.disabled = false;
       return;
@@ -64,16 +78,21 @@ async function runProcess() {
     // Build FormData with all config fields
     const fd = new FormData();
     for (const f of excels) fd.append("excel_files", f);
+
     const mapping = el("mapping").files[0];
     if (mapping) fd.append("mapping_file", mapping);
 
     addIfPresent(fd, "materiality_vnd", el("materiality_vnd").value);
-    addIfPresent(fd, "recurring_pct_threshold", el("recurring_pct_threshold").value);
-    addIfPresent(fd, "revenue_opex_pct_threshold", el("revenue_opex_pct_threshold").value);
-    addIfPresent(fd, "bs_pct_threshold", el("bs_pct_threshold").value);
+
+    // Percent-like fields normalized
+    addIfPresent(fd, "recurring_pct_threshold", normPct(el("recurring_pct_threshold").value));
+    addIfPresent(fd, "revenue_opex_pct_threshold", normPct(el("revenue_opex_pct_threshold").value));
+    addIfPresent(fd, "bs_pct_threshold", normPct(el("bs_pct_threshold").value));
+    addIfPresent(fd, "gm_drop_threshold_pct", normPct(el("gm_drop_threshold_pct").value));
+
+    // CSV / text / numeric fields
     addIfPresent(fd, "recurring_code_prefixes", el("recurring_code_prefixes").value);
     addIfPresent(fd, "min_trend_periods", el("min_trend_periods").value);
-    addIfPresent(fd, "gm_drop_threshold_pct", el("gm_drop_threshold_pct").value);
     addIfPresent(fd, "dep_pct_only_prefixes", el("dep_pct_only_prefixes").value);
     addIfPresent(fd, "customer_column_hints", el("customer_column_hints").value);
 
@@ -81,9 +100,10 @@ async function runProcess() {
     const resp = await fetch(`${API_BASE}/process`, { method: "POST", body: fd });
 
     if (!resp.ok) {
-      const text = await resp.text();
+      let text = "";
+      try { text = await resp.text(); } catch (_) {}
       setPill(el("liveStatus"), "failed", "err");
-      appendLog(`Server error (${resp.status}):\n${text}`);
+      appendLog(`Server error (${resp.status}):\n${text || "Unknown error"}`);
       btn.disabled = false;
       return;
     }
@@ -142,6 +162,7 @@ function bindEvents() {
 document.addEventListener("DOMContentLoaded", () => {
   bindEvents();
   checkHealth();
+
   const list = el("files");
   if (list) {
     const li = document.createElement("li");
