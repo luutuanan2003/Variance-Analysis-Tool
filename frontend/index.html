@@ -3,479 +3,193 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Variance Analysis Tool</title>
-  <link rel="stylesheet" href="/frontend/styles.css?v=2" />
+  <title>AI Variance Analysis Tool</title>
+  <link rel="stylesheet" href="/frontend/styles.css?v=3" />
 </head>
 <body>
   <header>
     <div class="header-main">
       <img src="/frontend/assets/logo.png" alt="Logo" class="logo" />
-      <h1 data-i18n="title">Variance Analysis Tool</h1>
+      <h1 data-i18n="title">AI Variance Analysis Tool</h1>
       <div class="lang-toggle" role="tablist" aria-label="Language">
         <button id="lang-en" class="btn small active" role="tab" aria-selected="true">EN</button>
         <button id="lang-vi" class="btn small" role="tab" aria-selected="false">VI</button>
       </div>
     </div>
-    <p class="subtitle" data-i18n="subtitle">Upload Excel → Process → Download</p>
+    <p class="subtitle" data-i18n="subtitle">Upload Excel → AI Analyzes → Download Results</p>
   </header>
 
   <main>
-    <!-- LEFT: upload + config -->
+    <!-- LEFT: upload + AI info -->
     <section class="card" aria-labelledby="uploadRunHdr">
-      <h2 id="uploadRunHdr" data-i18n="uploadRun">Upload & Run</h2>
+      <h2 id="uploadRunHdr" data-i18n="uploadRun">Upload & Process</h2>
 
       <div class="field">
         <label for="excel" data-i18n="excelLabel">Excel file(s)</label>
         <input id="excel" type="file" accept=".xlsx" multiple title=".xlsx" aria-describedby="excelHelp" />
-        <div id="excelHelp" class="help" data-i18n="excelHelp">Select one or more .xlsx files</div>
+        <div id="excelHelp" class="help" data-i18n="excelHelp">Select one or more .xlsx files for AI analysis</div>
       </div>
 
-      <div class="field">
-        <label for="mapping" data-i18n="mappingLabel">Mapping (optional)</label>
-        <input id="mapping" type="file" accept=".xlsx" aria-describedby="mappingHelp" />
-        <div id="mappingHelp" class="help" data-i18n="mappingHelp">Correlation/Seasonality rules workbook (optional)</div>
+      <div class="ai-info-section">
+        <h3 class="section-title" data-i18n="aiInfoTitle">🤖 AI-Powered Analysis</h3>
+        <div class="ai-features">
+          <div class="feature-item">
+            <span class="icon">🧠</span>
+            <div>
+              <strong data-i18n="autoMateriality">Auto Materiality Detection</strong>
+              <p data-i18n="autoMaterialityDesc">AI determines significance thresholds based on company size and data patterns</p>
+            </div>
+          </div>
+          <div class="feature-item">
+            <span class="icon">🔍</span>
+            <div>
+              <strong data-i18n="smartFocus">Smart Focus Areas</strong>
+              <p data-i18n="smartFocusDesc">Prioritizes Revenue, Utilities, and Interest Rate analysis automatically</p>
+            </div>
+          </div>
+          <div class="feature-item">
+            <span class="icon">📝</span>
+            <div>
+              <strong data-i18n="detailedExplanations">Detailed Explanations</strong>
+              <p data-i18n="detailedExplanationsDesc">Every anomaly includes reasoning and business context</p>
+            </div>
+          </div>
+        </div>
       </div>
 
-      <div class="sep"></div>
-
-      <div class="grid-2" role="group" aria-labelledby="configHdr">
-        <h3 id="configHdr" class="visually-hidden">Configuration</h3>
-
-        <div class="field">
-          <label for="materiality_vnd" data-i18n="materiality">Materiality (VND)</label>
-          <input id="materiality_vnd" type="number" placeholder="1000000000" inputmode="numeric" />
-          <div class="help" data-i18n="materialityHelp">Absolute change threshold in VND (applies to many rules).</div>
-        </div>
-
-        <div class="field">
-          <label for="recurring_pct_threshold" data-i18n="recurringPct">Recurring %</label>
-          <input id="recurring_pct_threshold" type="text" placeholder="0.05 or 5%" aria-describedby="pctNote" />
-          <div class="help" data-i18n="recurringPctHelp">MoM % threshold for recurring P/L accounts (e.g., 635*, 515*).</div>
-        </div>
-
-        <div class="field">
-          <label for="revenue_opex_pct_threshold" data-i18n="revenuePct">Revenue/OPEX %</label>
-          <input id="revenue_opex_pct_threshold" type="text" placeholder="0.10 or 10%" aria-describedby="pctNote" />
-          <div class="help" data-i18n="revenuePctHelp">MoM % threshold for revenue & operating expense accounts.</div>
-        </div>
-
-        <div class="field">
-          <label for="bs_pct_threshold" data-i18n="bsPct">Balance Sheet %</label>
-          <input id="bs_pct_threshold" type="text" placeholder="0.05 or 5%" aria-describedby="pctNote" />
-          <div class="help" data-i18n="bsPctHelp">MoM % threshold for BS balances (also gated by materiality).</div>
-        </div>
-
-        <div class="field">
-          <label for="recurring_code_prefixes" data-i18n="prefixes">Recurring code prefixes</label>
-          <input id="recurring_code_prefixes" type="text" placeholder="6321,635,515" />
-          <div class="help" data-i18n="prefixesHelp">Comma or | separated (defines which P/L codes are “Recurring”).</div>
-        </div>
-
-        <div class="field">
-          <label for="min_trend_periods" data-i18n="minTrend">Min trend periods</label>
-          <input id="min_trend_periods" type="number" placeholder="3" inputmode="numeric" />
-          <div class="help" data-i18n="minTrendHelp">Min periods to compute simple trend context in the output.</div>
-        </div>
-
-        <div class="field">
-          <label for="gm_drop_threshold_pct" data-i18n="gmDropLabel">gm_drop_threshold_pct</label>
-          <input id="gm_drop_threshold_pct" type="text" placeholder="0.01 or 1%" aria-describedby="pctNote" />
-          <div class="help" data-i18n="gmDropHelp">Alert when Gross Margin % drops ≥ this (absolute points).</div>
-        </div>
-
-        <div class="field">
-          <label for="dep_pct_only_prefixes" data-i18n="depPctLabel">dep_pct_only_prefixes</label>
-          <input id="dep_pct_only_prefixes" type="text" placeholder="217,632" />
-          <div class="help" data-i18n="depPctHelp">Codes that use %-only rule for depreciation variance.</div>
-        </div>
-
-        <div class="field">
-          <label for="customer_column_hints" data-i18n="customerHintLabel">customer_column_hints</label>
-          <input id="customer_column_hints" type="text" placeholder="customer,kh\u00e1ch,khach,client,buyer" />
-          <div class="help" data-i18n="customerHintHelp">Helps detect a “customer” column for revenue drill-downs.</div>
-        </div>
-
-        <div id="pctNote" class="help" style="grid-column: 1 / -1;" data-i18n="pctNote">
-          Tip: You can enter 0.05, 5, or 5% — they all mean 5%.
+      <div class="processing-status" id="processingStatus" style="display: none;">
+        <h3 class="section-title">⚙️ Processing Status</h3>
+        <div class="status-steps" id="statusSteps">
+          <!-- Dynamic status steps will be added here -->
         </div>
       </div>
 
       <div class="sep"></div>
 
       <div class="row">
-        <button id="runBtn" class="btn primary" data-i18n="processBtn">Process</button>
-        <span id="liveStatus" class="pill" data-i18n="idle">Idle</span>
+        <button id="runBtn" class="btn primary" data-i18n="processBtn">🚀 Analyze with AI</button>
+        <span id="liveStatus" class="pill idle" data-i18n="idle">Ready</span>
       </div>
 
       <div class="field" style="margin-top:12px;">
-        <label for="response" data-i18n="response">Response</label>
+        <label for="response" data-i18n="response">Analysis Progress</label>
         <div id="response" class="status" aria-live="polite"></div>
-        <!-- Clear Log button is injected by JS -->
       </div>
     </section>
 
-    <!-- RIGHT: health + outputs + rules explainer -->
-    <section class="card" aria-labelledby="serverHdr">
-      <h2 id="serverHdr" data-i18n="server">Server</h2>
-      <div class="row" style="margin-bottom:10px;">
-        <span id="healthPill" class="pill" data-i18n="healthUnknown">Health: unknown</span>
-        <button id="refreshHealth" class="btn" data-i18n="check">Check</button>
+    <!-- RIGHT: explanations and info -->
+    <section class="card">
+      <h2 data-i18n="howItWorks">How AI Analysis Works</h2>
+
+      <div class="info-section">
+        <h3 data-i18n="step1Title">📊 Step 1: Data Analysis</h3>
+        <p data-i18n="step1Desc">AI examines your financial data to understand company size, account patterns, and business context</p>
       </div>
 
-      <div class="sep"></div>
-
-      <div class="row" style="margin-bottom:10px;">
-        <h3 id="outputsTitle" style="margin:0;font-size:16px;" data-i18n="downloadThisRun">Download (this run)</h3>
-      </div>
-      <ul id="files" class="files" aria-live="polite"></ul>
-
-      <div class="sep"></div>
-
-      <h2 data-i18n="whatWeCheckTitle">What we check & how to tune</h2>
-
-      <!-- Tunable rules -->
-      <h3 class="rules-subtitle" data-i18n="tunableTitle">Tunable (UI-configurable)</h3>
-      <div class="rules" aria-labelledby="tunableRulesList">
-        <div id="tunableRulesList" class="visually-hidden">Tunable rules list</div>
-
-        <details open>
-          <summary data-i18n="rule_bs_title">Balance Sheet movements</summary>
-          <p class="help" data-i18n="rule_bs_desc">
-            We flag a BS account if the month-over-month (MoM) % change exceeds <code>bs_pct_threshold</code> AND the absolute change ≥ <code>materiality_vnd</code>.
-          </p>
-          <ul>
-            <li data-i18n="rule_bs_comp">Compares: current vs previous month per account</li>
-            <li data-i18n="rule_bs_trig">Triggers: % MoM &gt; <code>bs_pct_threshold</code> AND |Δ| ≥ <code>materiality_vnd</code></li>
-            <li data-i18n="rule_bs_tune">Tune: <code>bs_pct_threshold</code>, <code>materiality_vnd</code></li>
-          </ul>
-        </details>
-
-        <details>
-          <summary data-i18n="rule_pl_rec_title">P/L – Recurring accounts</summary>
-          <p class="help" data-i18n="rule_pl_rec_desc">
-            For accounts whose code starts with any of <code>recurring_code_prefixes</code>, flag when MoM % exceeds <code>recurring_pct_threshold</code> AND absolute change ≥ <code>materiality_vnd</code>.
-          </p>
-          <ul>
-            <li data-i18n="rule_pl_rec_comp">Compares: current vs previous month per account</li>
-            <li data-i18n="rule_pl_rec_trig">Triggers: % MoM &gt; <code>recurring_pct_threshold</code> AND |Δ| ≥ <code>materiality_vnd</code></li>
-            <li data-i18n="rule_pl_rec_tune">Tune: <code>recurring_code_prefixes</code>, <code>recurring_pct_threshold</code>, <code>materiality_vnd</code></li>
-          </ul>
-        </details>
-
-        <details>
-          <summary data-i18n="rule_pl_rev_title">P/L – Revenue & OPEX</summary>
-          <p class="help" data-i18n="rule_pl_rev_desc">
-            For non-recurring P/L accounts, flag when MoM % exceeds <code>revenue_opex_pct_threshold</code> OR absolute change ≥ <code>materiality_vnd</code>.
-          </p>
-          <ul>
-            <li data-i18n="rule_pl_rev_comp">Compares: current vs previous month per account</li>
-            <li data-i18n="rule_pl_rev_trig">Triggers: % MoM &gt; <code>revenue_opex_pct_threshold</code> OR |Δ| ≥ <code>materiality_vnd</code></li>
-            <li data-i18n="rule_pl_rev_tune">Tune: <code>revenue_opex_pct_threshold</code>, <code>materiality_vnd</code></li>
-          </ul>
-        </details>
-
-        <details>
-          <summary data-i18n="rule_gm_title">Gross Margin % drop</summary>
-          <p class="help" data-i18n="rule_gm_desc">
-            Compute GM% = (511* − 632*) / 511* per month. Flag when GM% drops by ≥ <code>gm_drop_threshold_pct</code> (absolute points) vs the previous month.
-          </p>
-          <ul>
-            <li data-i18n="rule_gm_comp">Compares: GM% this month vs last month (aggregated 511*/632*)</li>
-            <li data-i18n="rule_gm_trig">Triggers: GM% drop ≥ <code>gm_drop_threshold_pct</code></li>
-            <li data-i18n="rule_gm_tune">Tune: <code>gm_drop_threshold_pct</code></li>
-          </ul>
-        </details>
-
-        <details>
-          <summary data-i18n="rule_rev_by_cust_title">Revenue by customer</summary>
-          <p class="help" data-i18n="rule_rev_by_cust_desc">
-            If a “customer” column is detected (via <code>customer_column_hints</code>), we sum 511* by customer and flag when MoM % exceeds <code>revenue_opex_pct_threshold</code> OR absolute change ≥ <code>materiality_vnd</code>.
-          </p>
-          <ul>
-            <li data-i18n="rule_rev_by_cust_comp">Compares: per-customer revenue current vs previous month</li>
-            <li data-i18n="rule_rev_by_cust_trig">Triggers: % MoM &gt; <code>revenue_opex_pct_threshold</code> OR |Δ| ≥ <code>materiality_vnd</code></li>
-            <li data-i18n="rule_rev_by_cust_tune">Tune: <code>customer_column_hints</code>, <code>revenue_opex_pct_threshold</code>, <code>materiality_vnd</code></li>
-          </ul>
-        </details>
-
-        <details>
-          <summary data-i18n="rule_dep_pct_title">Depreciation %-only codes</summary>
-          <p class="help" data-i18n="rule_dep_pct_desc">
-            For codes in <code>dep_pct_only_prefixes</code> (e.g., 217, 632), we apply %-only rule using <code>recurring_pct_threshold</code>.
-          </p>
-          <ul>
-            <li data-i18n="rule_dep_pct_comp">Compares: current vs previous month per code</li>
-            <li data-i18n="rule_dep_pct_trig">Triggers: % MoM &gt; <code>recurring_pct_threshold</code> (no absolute gate)</li>
-            <li data-i18n="rule_dep_pct_tune">Tune: <code>dep_pct_only_prefixes</code>, <code>recurring_pct_threshold</code></li>
-          </ul>
-        </details>
-
-        <details>
-          <summary data-i18n="rule_corr_title">Correlation rules (optional mapping)</summary>
-          <p class="help" data-i18n="rule_corr_desc">
-            From the uploaded mapping workbook: sum Δ on left patterns vs right patterns and flag if expected direction is broken, only when |Δ| ≥ <code>materiality_vnd</code>.
-          </p>
-          <ul>
-            <li data-i18n="rule_corr_comp">Compares: grouped pattern deltas this vs last month</li>
-            <li data-i18n="rule_corr_trig">Triggers: expected direction broken AND |Δ| ≥ <code>materiality_vnd</code></li>
-            <li data-i18n="rule_corr_tune">Tune: upload mapping file; <code>materiality_vnd</code></li>
-          </ul>
-        </details>
+      <div class="info-section">
+        <h3 data-i18n="step2Title">🎯 Step 2: Smart Thresholds</h3>
+        <p data-i18n="step2Desc">Automatically determines materiality thresholds and focuses on critical areas: Revenue, Utilities, Interest Rates</p>
       </div>
 
-      <!-- Fixed rules -->
-      <h3 class="rules-subtitle" data-i18n="fixedTitle">Accounting rules (fixed)</h3>
-      <div class="rules" aria-labelledby="fixedRulesList">
-        <div id="fixedRulesList" class="visually-hidden">Fixed rules list</div>
+      <div class="info-section">
+        <h3 data-i18n="step3Title">🔍 Step 3: Anomaly Detection</h3>
+        <p data-i18n="step3Desc">Identifies unusual patterns, variance issues, and accounting inconsistencies with detailed explanations</p>
+      </div>
 
-        <details>
-          <summary data-i18n="rule_fixed_title">Additional accounting checks (fixed for now)</summary>
-          <p class="help" data-i18n="rule_fixed_desc">
-            These rely on built-in thresholds and are not tunable in the UI yet:
-          </p>
-          <ul>
-            <li data-i18n="rule_fixed_gmpp">Gross Margin Δ≥1pp (ACCT_THRESH.gross_margin_pct_delta = 0.01)</li>
-            <li data-i18n="rule_fixed_depr">Depreciation swings on 217*/214*/632* (depr_pct_delta = 0.10)</li>
-            <li data-i18n="rule_fixed_cogs">COGS/Revenue ratio drift vs historical mean (cogs_ratio_delta = 0.02)</li>
-            <li data-i18n="rule_fixed_sga">SG&A % of revenue spike vs historical mean (sga_pct_of_rev_delta = 0.10)</li>
-            <li data-i18n="rule_fixed_fin">Financial income/expense swings 515*/635* (fin_swing_pct = 0.50)</li>
-            <li data-i18n="rule_fixed_bspl">BS↔PL depreciation mismatch (bs_pl_dep_diff_pct = 0.05)</li>
-          </ul>
-          <p class="help" data-i18n="rule_fixed_note">
-            If you want to expose these in the UI later, we can add an “Advanced” panel.
-          </p>
-        </details>
+      <div class="info-section">
+        <h3 data-i18n="step4Title">📋 Step 4: Detailed Report</h3>
+        <p data-i18n="step4Desc">Generates Excel report with specific findings, business reasoning, and recommended actions</p>
+      </div>
+
+      <div class="download-section" id="downloadSection" style="display: none;">
+        <h3 data-i18n="downloadTitle">📥 Download Results</h3>
+        <button id="downloadBtn" class="btn" data-i18n="downloadBtn">Download Analysis</button>
       </div>
     </section>
   </main>
 
   <script>
-    // Tiny i18n (no deps). Default EN; click VI to switch.
-    const dict = {
-      en: {
-        title: "Variance Analysis Tool",
-        subtitle: "Upload Excel → Process → Download",
-        uploadRun: "Upload & Run",
+    const translations = {
+      "en": {
+        title: "AI Variance Analysis Tool",
+        subtitle: "Upload Excel → AI Analyzes → Download Results",
+        uploadRun: "Upload & Process",
         excelLabel: "Excel file(s)",
-        excelHelp: "Select one or more .xlsx files",
-        mappingLabel: "Mapping (optional)",
-        mappingHelp: "Correlation/Seasonality rules workbook (optional)",
-        materiality: "Materiality (VND)",
-        materialityHelp: "Absolute change threshold in VND (applies to many rules).",
-        recurringPct: "Recurring %",
-        recurringPctHelp: "MoM % threshold for recurring P/L accounts (e.g., 635*, 515*).",
-        revenuePct: "Revenue/OPEX %",
-        revenuePctHelp: "MoM % threshold for revenue & operating expense accounts.",
-        bsPct: "Balance Sheet %",
-        bsPctHelp: "MoM % threshold for BS balances (also gated by materiality).",
-        prefixes: "Recurring code prefixes",
-        prefixesHelp: "Comma or | separated (defines which P/L codes are “Recurring”).",
-        minTrend: "Min trend periods",
-        minTrendHelp: "Min periods to compute simple trend context in the output.",
-        processBtn: "Process",
-        idle: "Idle",
-        uploading: "Uploading…",
-        processing: "Processing…",
-        done: "Done",
-        failed: "Failed",
-        noFilesYet: "No files yet.",
-        noExcelSelected: "Please choose at least one .xlsx file.",
-        response: "Response",
-        server: "Server",
-        healthUnknown: "Health: unknown",
-        healthOk: "Health: ok",
-        healthDegraded: "Health: degraded",
-        healthDown: "Health: down",
-        check: "Check",
-        downloadThisRun: "Download (this run)",
-        gmDropLabel: "gm_drop_threshold_pct",
-        gmDropHelp: "Alert when Gross Margin % drops ≥ this (absolute points).",
-        depPctLabel: "dep_pct_only_prefixes",
-        depPctHelp: "Codes that use %-only rule for depreciation variance.",
-        customerHintLabel: "customer_column_hints",
-        customerHintHelp: "Helps detect a “customer” column for revenue drill-downs.",
-        pctNote: "Tip: You can enter 0.05, 5, or 5% — they all mean 5%.",
-
-        // Explainer titles & bullets
-        whatWeCheckTitle: "What we check & how to tune",
-        tunableTitle: "Tunable (UI-configurable)",
-        fixedTitle: "Accounting rules (fixed)",
-
-        rule_bs_title: "Balance Sheet movements",
-        rule_bs_desc: "We flag a BS account if the month-over-month (MoM) % change exceeds bs_pct_threshold AND the absolute change ≥ materiality_vnd.",
-        rule_bs_comp: "Compares: current vs previous month per account",
-        rule_bs_trig: "Triggers: % MoM > bs_pct_threshold AND |Δ| ≥ materiality_vnd",
-        rule_bs_tune: "Tune: bs_pct_threshold, materiality_vnd",
-
-        rule_pl_rec_title: "P/L – Recurring accounts",
-        rule_pl_rec_desc: "For accounts whose code starts with any of recurring_code_prefixes, flag when MoM % exceeds recurring_pct_threshold AND absolute change ≥ materiality_vnd.",
-        rule_pl_rec_comp: "Compares: current vs previous month per account",
-        rule_pl_rec_trig: "Triggers: % MoM > recurring_pct_threshold AND |Δ| ≥ materiality_vnd",
-        rule_pl_rec_tune: "Tune: recurring_code_prefixes, recurring_pct_threshold, materiality_vnd",
-
-        rule_pl_rev_title: "P/L – Revenue & OPEX",
-        rule_pl_rev_desc: "For non-recurring P/L accounts, flag when MoM % exceeds revenue_opex_pct_threshold OR absolute change ≥ materiality_vnd.",
-        rule_pl_rev_comp: "Compares: current vs previous month per account",
-        rule_pl_rev_trig: "Triggers: % MoM > revenue_opex_pct_threshold OR |Δ| ≥ materiality_vnd",
-        rule_pl_rev_tune: "Tune: revenue_opex_pct_threshold, materiality_vnd",
-
-        rule_gm_title: "Gross Margin % drop",
-        rule_gm_desc: "Compute GM% = (511* − 632*) / 511* per month. Flag when GM% drops by ≥ gm_drop_threshold_pct (absolute points) vs the previous month.",
-        rule_gm_comp: "Compares: GM% this month vs last month (aggregated 511*/632*)",
-        rule_gm_trig: "Triggers: GM% drop ≥ gm_drop_threshold_pct",
-        rule_gm_tune: "Tune: gm_drop_threshold_pct",
-
-        rule_rev_by_cust_title: "Revenue by customer",
-        rule_rev_by_cust_desc: "If a “customer” column is detected (via customer_column_hints), sum 511* by customer and flag when MoM % exceeds revenue_opex_pct_threshold OR absolute change ≥ materiality_vnd.",
-        rule_rev_by_cust_comp: "Compares: per-customer revenue current vs previous month",
-        rule_rev_by_cust_trig: "Triggers: % MoM > revenue_opex_pct_threshold OR |Δ| ≥ materiality_vnd",
-        rule_rev_by_cust_tune: "Tune: customer_column_hints, revenue_opex_pct_threshold, materiality_vnd",
-
-        rule_dep_pct_title: "Depreciation %-only codes",
-        rule_dep_pct_desc: "For codes in dep_pct_only_prefixes (e.g., 217, 632) apply %-only rule using recurring_pct_threshold.",
-        rule_dep_pct_comp: "Compares: current vs previous month per code",
-        rule_dep_pct_trig: "Triggers: % MoM > recurring_pct_threshold (no absolute gate)",
-        rule_dep_pct_tune: "Tune: dep_pct_only_prefixes, recurring_pct_threshold",
-
-        rule_corr_title: "Correlation rules (optional mapping)",
-        rule_corr_desc: "From the uploaded mapping workbook: sum Δ on left patterns vs right patterns and flag if expected direction is broken, only when |Δ| ≥ materiality_vnd.",
-        rule_corr_comp: "Compares: grouped pattern deltas this vs last month",
-        rule_corr_trig: "Triggers: expected direction broken AND |Δ| ≥ materiality_vnd",
-        rule_corr_tune: "Tune: upload mapping file; materiality_vnd",
-
-        rule_fixed_title: "Additional accounting checks (fixed for now)",
-        rule_fixed_desc: "These rely on built-in thresholds and are not tunable in the UI yet:",
-        rule_fixed_gmpp: "Gross Margin Δ≥1pp (ACCT_THRESH.gross_margin_pct_delta = 0.01)",
-        rule_fixed_depr: "Depreciation swings on 217*/214*/632* (depr_pct_delta = 0.10)",
-        rule_fixed_cogs: "COGS/Revenue ratio drift vs historical mean (cogs_ratio_delta = 0.02)",
-        rule_fixed_sga: "SG&A % of revenue spike vs historical mean (sga_pct_of_rev_delta = 0.10)",
-        rule_fixed_fin: "Financial income/expense swings 515*/635* (fin_swing_pct = 0.50)",
-        rule_fixed_bspl: "BS↔PL depreciation mismatch (bs_pl_dep_diff_pct = 0.05)",
-        rule_fixed_note: "If you want to expose these in the UI later, we can add an “Advanced” panel."
+        excelHelp: "Select one or more .xlsx files for AI analysis",
+        aiInfoTitle: "🤖 AI-Powered Analysis",
+        autoMateriality: "Auto Materiality Detection",
+        autoMaterialityDesc: "AI determines significance thresholds based on company size and data patterns",
+        smartFocus: "Smart Focus Areas",
+        smartFocusDesc: "Prioritizes Revenue, Utilities, and Interest Rate analysis automatically",
+        detailedExplanations: "Detailed Explanations",
+        detailedExplanationsDesc: "Every anomaly includes reasoning and business context",
+        processBtn: "🚀 Analyze with AI",
+        idle: "Ready",
+        response: "Analysis Progress",
+        howItWorks: "How AI Analysis Works",
+        step1Title: "📊 Step 1: Data Analysis",
+        step1Desc: "AI examines your financial data to understand company size, account patterns, and business context",
+        step2Title: "🎯 Step 2: Smart Thresholds",
+        step2Desc: "Automatically determines materiality thresholds and focuses on critical areas: Revenue, Utilities, Interest Rates",
+        step3Title: "🔍 Step 3: Anomaly Detection",
+        step3Desc: "Identifies unusual patterns, variance issues, and accounting inconsistencies with detailed explanations",
+        step4Title: "📋 Step 4: Detailed Report",
+        step4Desc: "Generates Excel report with specific findings, business reasoning, and recommended actions",
+        downloadTitle: "📥 Download Results",
+        downloadBtn: "Download Analysis"
       },
-      vi: {
-        title: "Công cụ phân tích biến động",
-        subtitle: "Tải Excel → Xử lý → Tải xuống",
-        uploadRun: "Tải tệp & Chạy",
+      "vi": {
+        title: "Công Cụ Phân Tích Sai Lệch AI",
+        subtitle: "Tải Excel → AI Phân Tích → Tải Kết Quả",
+        uploadRun: "Tải Lên & Xử Lý",
         excelLabel: "Tệp Excel",
-        excelHelp: "Chọn một hoặc nhiều tệp .xlsx",
-        mappingLabel: "Tệp quy tắc (tùy chọn)",
-        mappingHelp: "Tệp quy tắc Tương quan/Mùa vụ (tùy chọn)",
-        materiality: "Ngưỡng quan trọng (VND)",
-        materialityHelp: "Ngưỡng biến động tuyệt đối theo VND (áp dụng cho nhiều luật).",
-        recurringPct: "% Định kỳ",
-        recurringPctHelp: "Ngưỡng % MoM cho các tài khoản P/L định kỳ (vd: 635*, 515*).",
-        revenuePct: "% Doanh thu/Chi phí",
-        revenuePctHelp: "Ngưỡng % MoM cho doanh thu & chi phí hoạt động.",
-        bsPct: "% Bảng CĐKT",
-        bsPctHelp: "Ngưỡng % MoM cho số dư CĐKT (có kiểm soát bởi ngưỡng VND).",
-        prefixes: "Tiền tố mã định kỳ",
-        prefixesHelp: "Ngăn cách bằng dấu phẩy hoặc | (định nghĩa nhóm P/L “Định kỳ”).",
-        minTrend: "Số kỳ tối thiểu",
-        minTrendHelp: "Số kỳ tối thiểu để tính xu hướng đơn giản trong kết quả.",
-        processBtn: "Xử lý",
-        idle: "Chờ",
-        uploading: "Đang tải…",
-        processing: "Đang xử lý…",
-        done: "Hoàn tất",
-        failed: "Lỗi",
-        noFilesYet: "Chưa có tệp.",
-        noExcelSelected: "Vui lòng chọn ít nhất một tệp .xlsx.",
-        response: "Phản hồi",
-        server: "Máy chủ",
-        healthUnknown: "Trạng thái: chưa rõ",
-        healthOk: "Trạng thái: tốt",
-        healthDegraded: "Trạng thái: suy giảm",
-        healthDown: "Trạng thái: ngừng",
-        check: "Kiểm tra",
-        downloadThisRun: "Tải xuống (lượt này)",
-        gmDropLabel: "Ngưỡng giảm GM (%)",
-        gmDropHelp: "Cảnh báo khi GM% giảm ≥ ngưỡng này (điểm % tuyệt đối).",
-        depPctLabel: "Mã khấu hao (%-only)",
-        depPctHelp: "Các mã áp dụng luật chỉ theo % cho chênh lệch khấu hao.",
-        customerHintLabel: "Gợi ý cột khách hàng",
-        customerHintHelp: "Giúp nhận diện cột “khách hàng” để phân tích doanh thu.",
-        pctNote: "Mẹo: Bạn có thể nhập 0.05, 5 hoặc 5% — đều là 5%.",
-
-        whatWeCheckTitle: "Kiểm tra những gì & cách chỉnh",
-        tunableTitle: "Có thể chỉnh trên UI",
-        fixedTitle: "Luật kế toán (cố định)",
-
-        rule_bs_title: "Biến động Bảng CĐKT",
-        rule_bs_desc: "Cờ cảnh báo nếu % MoM vượt bs_pct_threshold VÀ biến động tuyệt đối ≥ materiality_vnd.",
-        rule_bs_comp: "So sánh: tháng này vs tháng trước theo từng tài khoản",
-        rule_bs_trig: "Kích hoạt: % MoM > bs_pct_threshold VÀ |Δ| ≥ materiality_vnd",
-        rule_bs_tune: "Chỉnh: bs_pct_threshold, materiality_vnd",
-
-        rule_pl_rec_title: "P/L – Tài khoản định kỳ",
-        rule_pl_rec_desc: "Với mã bắt đầu thuộc recurring_code_prefixes: cờ nếu % MoM vượt recurring_pct_threshold VÀ biến động tuyệt đối ≥ materiality_vnd.",
-        rule_pl_rec_comp: "So sánh: tháng này vs tháng trước theo từng tài khoản",
-        rule_pl_rec_trig: "Kích hoạt: % MoM > recurring_pct_threshold VÀ |Δ| ≥ materiality_vnd",
-        rule_pl_rec_tune: "Chỉnh: recurring_code_prefixes, recurring_pct_threshold, materiality_vnd",
-
-        rule_pl_rev_title: "P/L – Doanh thu & Chi phí",
-        rule_pl_rev_desc: "Với tài khoản không định kỳ: cờ nếu % MoM vượt revenue_opex_pct_threshold HOẶC biến động tuyệt đối ≥ materiality_vnd.",
-        rule_pl_rev_comp: "So sánh: tháng này vs tháng trước theo từng tài khoản",
-        rule_pl_rev_trig: "Kích hoạt: % MoM > revenue_opex_pct_threshold HOẶC |Δ| ≥ materiality_vnd",
-        rule_pl_rev_tune: "Chỉnh: revenue_opex_pct_threshold, materiality_vnd",
-
-        rule_gm_title: "Giảm Tỷ suất LN gộp (GM%)",
-        rule_gm_desc: "GM% = (511* − 632*) / 511*. Cờ nếu GM% giảm ≥ gm_drop_threshold_pct (điểm %) so với tháng trước.",
-        rule_gm_comp: "So sánh: GM% tháng này vs tháng trước (tổng 511*/632*)",
-        rule_gm_trig: "Kích hoạt: GM% giảm ≥ gm_drop_threshold_pct",
-        rule_gm_tune: "Chỉnh: gm_drop_threshold_pct",
-
-        rule_rev_by_cust_title: "Doanh thu theo khách hàng",
-        rule_rev_by_cust_desc: "Nếu phát hiện cột “khách hàng” (qua customer_column_hints), cộng 511* theo khách và cờ nếu % MoM vượt revenue_opex_pct_threshold HOẶC biến động tuyệt đối ≥ materiality_vnd.",
-        rule_rev_by_cust_comp: "So sánh: doanh thu theo khách tháng này vs tháng trước",
-        rule_rev_by_cust_trig: "Kích hoạt: % MoM > revenue_opex_pct_threshold HOẶC |Δ| ≥ materiality_vnd",
-        rule_rev_by_cust_tune: "Chỉnh: customer_column_hints, revenue_opex_pct_threshold, materiality_vnd",
-
-        rule_dep_pct_title: "Mã khấu hao chỉ theo %",
-        rule_dep_pct_desc: "Với các mã trong dep_pct_only_prefixes (vd: 217, 632) áp dụng luật chỉ theo %, dùng recurring_pct_threshold.",
-        rule_dep_pct_comp: "So sánh: tháng này vs tháng trước theo mã",
-        rule_dep_pct_trig: "Kích hoạt: % MoM > recurring_pct_threshold (không có ngưỡng tuyệt đối)",
-        rule_dep_pct_tune: "Chỉnh: dep_pct_only_prefixes, recurring_pct_threshold",
-
-        rule_corr_title: "Quy tắc tương quan (tùy chọn)",
-        rule_corr_desc: "Từ workbook quy tắc tải lên: so sánh tổng Δ nhóm trái ↔ phải, cờ nếu vi phạm hướng kỳ vọng và |Δ| ≥ materiality_vnd.",
-        rule_corr_comp: "So sánh: Δ nhóm tháng này vs tháng trước",
-        rule_corr_trig: "Kích hoạt: vi phạm hướng kỳ vọng VÀ |Δ| ≥ materiality_vnd",
-        rule_corr_tune: "Chỉnh: tải workbook quy tắc; materiality_vnd",
-
-        rule_fixed_title: "Các kiểm tra kế toán bổ sung (cố định hiện tại)",
-        rule_fixed_desc: "Dùng ngưỡng dựng sẵn, chưa mở cấu hình trên UI:",
-        rule_fixed_gmpp: "GM Δ≥1 điểm % (gross_margin_pct_delta = 0.01)",
-        rule_fixed_depr: "Dao động khấu hao 217*/214*/632* (depr_pct_delta = 0.10)",
-        rule_fixed_cogs: "Tỷ lệ COGS/Doanh thu lệch khỏi trung bình (cogs_ratio_delta = 0.02)",
-        rule_fixed_sga: "SG&A % trên doanh thu tăng vọt (sga_pct_of_rev_delta = 0.10)",
-        rule_fixed_fin: "Dao động 515*/635* (fin_swing_pct = 0.50)",
-        rule_fixed_bspl: "Sai lệch khấu hao BS↔PL (bs_pl_dep_diff_pct = 0.05)",
-        rule_fixed_note: "Nếu cần mở cấu hình các ngưỡng này, có thể thêm mục “Nâng cao”."
+        excelHelp: "Chọn một hoặc nhiều tệp .xlsx để AI phân tích",
+        aiInfoTitle: "🤖 Phân Tích Bằng AI",
+        autoMateriality: "Tự Động Phát Hiện Mức Trọng Yếu",
+        autoMaterialityDesc: "AI xác định ngưỡng quan trọng dựa trên quy mô công ty và mẫu dữ liệu",
+        smartFocus: "Lĩnh Vực Tập Trung Thông Minh",
+        smartFocusDesc: "Ưu tiên phân tích Doanh thu, Tiện ích và Lãi suất tự động",
+        detailedExplanations: "Giải Thích Chi Tiết",
+        detailedExplanationsDesc: "Mỗi bất thường bao gồm lý do và bối cảnh kinh doanh",
+        processBtn: "🚀 Phân Tích với AI",
+        idle: "Sẵn Sàng",
+        response: "Tiến Trình Phân Tích",
+        howItWorks: "Cách AI Phân Tích Hoạt Động",
+        step1Title: "📊 Bước 1: Phân Tích Dữ Liệu",
+        step1Desc: "AI kiểm tra dữ liệu tài chính để hiểu quy mô công ty, mẫu tài khoản và bối cảnh kinh doanh",
+        step2Title: "🎯 Bước 2: Ngưỡng Thông Minh",
+        step2Desc: "Tự động xác định ngưỡng trọng yếu và tập trung vào các lĩnh vực quan trọng: Doanh thu, Tiện ích, Lãi suất",
+        step3Title: "🔍 Bước 3: Phát Hiện Bất Thường",
+        step3Desc: "Xác định các mẫu bất thường, vấn đề sai lệch và không nhất quán kế toán với giải thích chi tiết",
+        step4Title: "📋 Bước 4: Báo Cáo Chi Tiết",
+        step4Desc: "Tạo báo cáo Excel với các phát hiện cụ thể, lý do kinh doanh và hành động khuyến nghị",
+        downloadTitle: "📥 Tải Kết Quả",
+        downloadBtn: "Tải Phân Tích"
       }
     };
 
-    function setLang(lang) {
-      const strings = dict[lang] || dict.en;
+    let currentLang = "en";
+    function switchLanguage(lang) {
+      currentLang = lang;
       document.querySelectorAll("[data-i18n]").forEach(el => {
         const key = el.getAttribute("data-i18n");
-        if (strings[key]) el.textContent = strings[key];
+        if (translations[lang][key]) {
+          el.textContent = translations[lang][key];
+        }
       });
-      document.getElementById("lang-en").classList.toggle("active", lang === "en");
-      document.getElementById("lang-vi").classList.toggle("active", lang === "vi");
-      document.getElementById("lang-en").setAttribute("aria-selected", lang === "en");
-      document.getElementById("lang-vi").setAttribute("aria-selected", lang === "vi");
-      document.documentElement.setAttribute("lang", lang);
+
+      document.querySelectorAll(".btn.small").forEach(btn => btn.classList.remove("active"));
+      document.getElementById(`lang-${lang}`).classList.add("active");
     }
 
-    document.addEventListener("DOMContentLoaded", () => {
-      document.getElementById("lang-en").addEventListener("click", () => setLang("en"));
-      document.getElementById("lang-vi").addEventListener("click", () => setLang("vi"));
-      setLang("en"); // default
-    });
+    document.getElementById("lang-en").onclick = () => switchLanguage("en");
+    document.getElementById("lang-vi").onclick = () => switchLanguage("vi");
+
+    // Initialize
+    switchLanguage("en");
   </script>
 
   <!-- Bump cache-buster when script changes -->
-  <script src="/frontend/script.js?v=3" defer></script>
+  <script src="/frontend/script.js?v=1" defer></script>
 </body>
 </html>
