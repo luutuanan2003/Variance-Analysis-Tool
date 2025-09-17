@@ -397,6 +397,74 @@ def compute_mom_with_trends(df: pd.DataFrame, month_cols: list[str], CONFIG: dic
 # Returns:
 # A DataFrame with standardized anomaly records containing AI explanations,
 # materiality reasoning, and specific business recommendations.
+def build_anoms_raw_excel(
+    sub: str,
+    excel_bytes: bytes,
+    filename: str,
+    CONFIG: dict,
+) -> pd.DataFrame:
+    """AI-only anomaly detection using complete raw Excel file.
+
+    This function bypasses all data cleaning and processing, sending the complete
+    raw Excel file directly to the AI for analysis. The AI will focus specifically
+    on the 'BS Breakdown' and 'PL Breakdown' sheets while having access to the
+    complete file context.
+
+    Args:
+        sub: Subsidiary/company name for analysis
+        excel_bytes: Complete raw Excel file as bytes
+        filename: Original filename for context
+        CONFIG: Configuration dict containing LLM model settings
+
+    Returns:
+        DataFrame with anomaly records containing AI analysis and explanations
+    """
+    anomalies: list[dict] = []
+
+    print(f"\n🧠 Starting RAW EXCEL AI analysis for '{sub}'...")
+    try:
+        llm_analyzer = LLMFinancialAnalyzer(CONFIG.get("llm_model", "llama3.1"))
+        print(f"✅ AI analyzer initialized with model: {CONFIG.get('llm_model', 'llama3.1')}")
+
+        print(f"\n🔍 Running AI analysis on complete raw Excel file...")
+        llm_anomalies = llm_analyzer.analyze_raw_excel_file(excel_bytes, filename, sub, CONFIG)
+        print(f"✅ Raw Excel AI analysis completed, processing {len(llm_anomalies)} results")
+
+        print(f"\n📋 Converting {len(llm_anomalies)} AI results to report format...")
+        for idx, anom in enumerate(llm_anomalies, 1):
+            print(f"   • Processing anomaly {idx}: Account {anom.get('account_code', 'Unknown')}")
+            anomalies.append({
+                "Subsidiary": anom["subsidiary"],
+                "Account": anom["account_code"],
+                "Period": "Current",
+                "Pct Change": anom["change_percent"],
+                "Abs Change (VND)": int(anom["change_amount"]),
+                "Trigger(s)": anom["rule_name"],
+                "Suggested likely cause": anom["details"],
+                "Status": "Raw Excel AI Analysis",
+                "Notes": anom["details"],
+            })
+        print(f"✅ Successfully converted all AI results to report format")
+
+        print(f"\n✅ Raw Excel AI anomaly detection completed for '{sub}' - returning {len(anomalies)} records")
+        return pd.DataFrame(anomalies)
+
+    except Exception as e:
+        print(f"\n❌ Raw Excel AI analysis failed for '{sub}': {e}")
+        error_record = pd.DataFrame([{
+            "Subsidiary": sub,
+            "Account": "RAW_EXCEL_AI_ERROR",
+            "Period": "N/A",
+            "Pct Change": 0,
+            "Abs Change (VND)": 0,
+            "Trigger(s)": "Raw Excel AI Analysis Failed",
+            "Suggested likely cause": f"Raw Excel AI error: {str(e)[:100]}...",
+            "Status": "Error",
+            "Notes": "Check if Ollama is running and model is available",
+        }])
+        print(f"⚠️  Returning error record to continue processing other files")
+        return error_record
+
 def build_anoms(
     sub: str,
     bs_data: pd.DataFrame, bs_cols: list[str],
@@ -727,53 +795,25 @@ def process_all(
         sub = extract_subsidiary_name_from_bytes(xl_bytes, fname)
         print(f"✅ Subsidiary: '{sub}'")
 
-        # --- MANDATORY SHEETS (exact names) ---
-        print(f"\n📋 Processing Balance Sheet data...")
+        print(f"\n🔍 Validating required Excel sheets...")
         try:
-            bs_df, bs_cols, bs_debug_bytes = process_financial_tab_from_bytes(xl_bytes, "BS Breakdown", "BS", sub)
-            print(f"✅ Balance Sheet processed successfully")
-            print(f"   • Rows: {len(bs_df)}")
-            print(f"   • Columns: {len(bs_df.columns)}")
-            print(f"   • Month columns: {len(bs_cols)} ({', '.join(bs_cols[:3])}{'...' if len(bs_cols) > 3 else ''})")
-
-            # Save BS debug file for download
-            if bs_debug_bytes:
-                bs_debug_name = f"BS_Pipeline_Debug_{sub.replace(' ', '_')[:20]}.xlsx"
-                debug_files.append((bs_debug_name, bs_debug_bytes))
-                print(f"   📄 BS debug file ready for download")
+            # Just check that the required sheets exist, don't process them
+            wb_check = load_workbook(io.BytesIO(xl_bytes), read_only=True)
+            if "BS Breakdown" not in wb_check.sheetnames:
+                raise ValueError(f"Required sheet 'BS Breakdown' not found in '{fname}'")
+            if "PL Breakdown" not in wb_check.sheetnames:
+                raise ValueError(f"Required sheet 'PL Breakdown' not found in '{fname}'")
+            wb_check.close()
+            print(f"✅ Required sheets validated: 'BS Breakdown' and 'PL Breakdown' found")
         except Exception as e:
-            print(f"❌ Balance Sheet processing failed: {e}")
-            raise ValueError(f"Required sheet 'BS Breakdown' not found or unreadable in '{fname}': {e}") from e
+            print(f"❌ Excel validation failed: {e}")
+            raise ValueError(f"Cannot read Excel file '{fname}': {e}") from e
 
-        print(f"\n📈 Processing Profit & Loss data...")
-        try:
-            pl_df, pl_cols, pl_debug_bytes = process_financial_tab_from_bytes(xl_bytes, "PL Breakdown", "PL", sub)
-            print(f"✅ Profit & Loss processed successfully")
-            print(f"   • Rows: {len(pl_df)}")
-            print(f"   • Columns: {len(pl_df.columns)}")
-            print(f"   • Month columns: {len(pl_cols)} ({', '.join(pl_cols[:3])}{'...' if len(pl_cols) > 3 else ''})")
-
-            # Save PL debug file for download
-            if pl_debug_bytes:
-                pl_debug_name = f"PL_Pipeline_Debug_{sub.replace(' ', '_')[:20]}.xlsx"
-                debug_files.append((pl_debug_name, pl_debug_bytes))
-                print(f"   📄 PL debug file ready for download")
-        except Exception as e:
-            print(f"❌ Profit & Loss processing failed: {e}")
-            raise ValueError(f"Required sheet 'PL Breakdown' not found or unreadable in '{fname}': {e}") from e
-
-        print(f"\n🔍 Validating processed data...")
-        if bs_df is None or bs_df.empty:
-            print(f"❌ Balance Sheet validation failed: empty or invalid data")
-            raise ValueError(f"Required sheet 'BS Breakdown' is empty or invalid in '{fname}'.")
-        if pl_df is None or pl_df.empty:
-            print(f"❌ Profit & Loss validation failed: empty or invalid data")
-            raise ValueError(f"Required sheet 'PL Breakdown' is empty or invalid in '{fname}'.")
-        print(f"✅ Data validation passed for both sheets")
-
-        # === AI ANOMALY DETECTION ===
-        print(f"\n🤖 Starting AI-powered anomaly detection for '{sub}'...")
-        anoms = build_anoms(sub, bs_df, bs_cols, pl_df, pl_cols, CONFIG)
+        # === RAW EXCEL AI ANALYSIS ===
+        print(f"\n🤖 Starting RAW EXCEL AI analysis for '{sub}'...")
+        print(f"📄 Passing complete raw Excel file to AI (no data cleaning)")
+        print(f"🎯 AI will focus on 'BS Breakdown' and 'PL Breakdown' sheets")
+        anoms = build_anoms_raw_excel(sub, xl_bytes, fname, CONFIG)
 
         if anoms is not None and not anoms.empty:
             print(f"✅ AI analysis completed successfully")
