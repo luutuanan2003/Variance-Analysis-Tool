@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl:*)",
+      "Bash(pkill:*)",
+      "Bash(uvicorn:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
