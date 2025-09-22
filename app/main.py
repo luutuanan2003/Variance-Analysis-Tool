@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from .core import process_all, DEFAULT_CONFIG  # process_all returns a single .xlsx as bytes
+from .core import process_all, DEFAULT_CONFIG, analyze_revenue_impact_from_bytes  # process_all returns a single .xlsx as bytes
 
 # ---------------------------------------------------------------------
 # App initialization
@@ -41,6 +41,13 @@ def serve_index():
     if not index.exists():
         return HTMLResponse("<h1>frontend/index.html not found</h1>", status_code=500)
     return HTMLResponse(index.read_text(encoding="utf-8"))
+
+@app.get("/test", response_class=HTMLResponse)
+def serve_test():
+    test_file = Path("test.html")
+    if not test_file.exists():
+        return HTMLResponse("<h1>test.html not found</h1>", status_code=500)
+    return HTMLResponse(test_file.read_text(encoding="utf-8"))
 
 # ---------------------------------------------------------------------
 # Health (simple)
@@ -189,5 +196,29 @@ async def process(
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             headers={"Content-Disposition": 'attachment; filename="variance_output.xlsx"'}
         )
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+# ---------------------------------------------------------------------
+# Revenue Impact Analysis endpoint
+# ---------------------------------------------------------------------
+@app.post("/analyze-revenue")
+async def analyze_revenue(
+    excel_file: UploadFile = File(...),
+):
+    """
+    Analyze revenue impact from a single Excel file
+    Returns JSON with detailed revenue analysis
+    """
+    try:
+        # Read the uploaded file
+        file_bytes = await excel_file.read()
+        filename = excel_file.filename or "input.xlsx"
+
+        # Run revenue impact analysis
+        analysis_result = analyze_revenue_impact_from_bytes(file_bytes, filename)
+
+        return JSONResponse(content=analysis_result)
+
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})

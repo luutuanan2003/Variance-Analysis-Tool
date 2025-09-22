@@ -41,24 +41,6 @@ function normPct(val) {
   return (num > 1 && num <= 100) ? String(num / 100) : String(num);
 }
 
-// =================== HEALTH ===================
-async function checkHealth() {
-  const pill = el("healthPill");
-  try {
-    const r = await fetch(`${API_BASE}/health`, { cache: "no-store" });
-    if (!r.ok) throw new Error(`${r.status}`);
-    const j = await r.json();
-    if (j.status === "ok") {
-      setPill(pill, "healthOk", "ok");
-    } else {
-      setPill(pill, "healthDegraded", "warn");
-      console.warn("Health details:", j);
-    }
-  } catch (e) {
-    setPill(pill, "healthDown", "err");
-    console.error("Health check failed:", e);
-  }
-}
 
 // =================== PROCESS ===================
 async function runProcess() {
@@ -95,7 +77,6 @@ async function runProcess() {
     addIfPresent(fd, "recurring_code_prefixes", el("recurring_code_prefixes").value);
     addIfPresent(fd, "min_trend_periods", el("min_trend_periods").value);
     addIfPresent(fd, "dep_pct_only_prefixes", el("dep_pct_only_prefixes").value);
-    addIfPresent(fd, "customer_column_hints", el("customer_column_hints").value);
 
     appendLog("POST /process …");
     const resp = await fetch(`${API_BASE}/process`, { method: "POST", body: fd });
@@ -130,12 +111,64 @@ async function runProcess() {
     if (title) title.textContent = t("downloadThisRun");
 
     appendLog("Success: Excel ready to download.");
+
+    // Automatically run revenue analysis on the first uploaded file
+    await runRevenueAnalysisAutomatically(excels[0]);
+
     setPill(el("liveStatus"), "done", "ok");
   } catch (e) {
     appendLog("Fetch failed: " + e.message);
     setPill(el("liveStatus"), "failed", "err");
   } finally {
     btn.disabled = false;
+  }
+}
+
+// =================== REVENUE ANALYSIS ===================
+async function runRevenueAnalysisAutomatically(file) {
+  if (!file) return;
+
+  const resultsDiv = el("revenueResults");
+  const contentDiv = el("revenueContent");
+
+  try {
+    appendLog("Running revenue impact analysis...");
+
+    const formData = new FormData();
+    formData.append("excel_file", file);
+
+    const response = await fetch("/analyze-revenue", {
+      method: "POST",
+      body: formData
+    });
+
+    const result = await response.json();
+
+    if (result.error) {
+      throw new Error(result.error);
+    }
+
+    // Display results
+    displayRevenueAnalysis(result);
+
+    if (resultsDiv) {
+      resultsDiv.style.display = "block";
+    }
+
+    appendLog("Revenue analysis completed successfully.");
+
+  } catch (error) {
+    console.error("Revenue analysis error:", error);
+
+    if (contentDiv) {
+      contentDiv.innerHTML = `<div class="error">Revenue analysis failed: ${error.message}</div>`;
+    }
+
+    if (resultsDiv) {
+      resultsDiv.style.display = "block";
+    }
+
+    appendLog(`Revenue analysis failed: ${error.message}`);
   }
 }
 
@@ -167,20 +200,171 @@ function seedNoFilesPlaceholder() {
 
 function bindEvents() {
   const runBtn = el("runBtn");
-  const refreshHealthBtn = el("refreshHealth");
 
   if (runBtn) runBtn.addEventListener("click", runProcess);
-  if (refreshHealthBtn) refreshHealthBtn.addEventListener("click", checkHealth);
 
   injectClearLogButton();
 }
 
+
+function displayRevenueAnalysis(data) {
+  const contentDiv = el("revenueContent");
+  if (!contentDiv) return;
+
+  let html = "";
+
+  // Summary section
+  if (data.summary) {
+    html += `
+      <div class="analysis-section">
+        <h4>📊 Summary</h4>
+        <div class="summary-stats">
+          <div class="stat">
+            <label>Subsidiary:</label>
+            <span>${data.subsidiary || 'N/A'}</span>
+          </div>
+          <div class="stat">
+            <label>Total Revenue Accounts:</label>
+            <span>${data.summary.total_accounts || 0}</span>
+          </div>
+          <div class="stat">
+            <label>Latest Total Revenue:</label>
+            <span>${formatVND(data.summary.total_revenue_latest || 0)}</span>
+          </div>
+          <div class="stat">
+            <label>Highest Variance Account:</label>
+            <span>${data.summary.highest_variance_account || 'N/A'}</span>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  // Total revenue trend
+  if (data.total_revenue_changes && data.total_revenue_changes.length > 0) {
+    html += `
+      <div class="analysis-section">
+        <h4>📈 Total Revenue Trend (511*)</h4>
+        <div class="revenue-changes">
+    `;
+
+    data.total_revenue_changes.forEach(change => {
+      const changeClass = change.change >= 0 ? 'positive' : 'negative';
+      html += `
+        <div class="change-item ${changeClass}">
+          <div class="period">${change.from} → ${change.to}</div>
+          <div class="values">
+            ${formatVND(change.prev_value)} → ${formatVND(change.curr_value)}
+          </div>
+          <div class="change">
+            ${change.change >= 0 ? '+' : ''}${formatVND(change.change)}
+            (${change.pct_change >= 0 ? '+' : ''}${change.pct_change.toFixed(1)}%)
+          </div>
+        </div>
+      `;
+    });
+
+    html += `
+        </div>
+      </div>
+    `;
+  }
+
+  // Account-level analysis with customer impacts
+  if (data.account_analysis && data.account_analysis.length > 0) {
+    html += `
+      <div class="analysis-section">
+        <h4>🏦 Revenue by Account & Customer Impact</h4>
+    `;
+
+    data.account_analysis.forEach(account => {
+      if (account.biggest_change && Math.abs(account.biggest_change.change) > 1000000) {
+        html += `
+          <div class="account-analysis">
+            <h5>${account.account}</h5>
+            <div class="biggest-change">
+              <strong>Biggest Change:</strong> ${account.biggest_change.from} → ${account.biggest_change.to}
+              <br>
+              <span class="${account.biggest_change.change >= 0 ? 'positive' : 'negative'}">
+                ${account.biggest_change.change >= 0 ? '+' : ''}${formatVND(account.biggest_change.change)}
+                (${account.biggest_change.pct_change >= 0 ? '+' : ''}${account.biggest_change.pct_change.toFixed(1)}%)
+              </span>
+            </div>
+        `;
+
+        if (account.customer_impacts && account.customer_impacts.length > 0) {
+          html += `
+            <div class="customer-impacts">
+              <strong>Top Customer Impacts:</strong>
+              <ul>
+          `;
+
+          account.customer_impacts.forEach(impact => {
+            const impactClass = impact.change >= 0 ? 'positive' : 'negative';
+            html += `
+              <li class="${impactClass}">
+                <strong>${impact.entity}:</strong>
+                ${impact.change >= 0 ? '+' : ''}${formatVND(impact.change)}
+                (${impact.pct_change >= 0 ? '+' : ''}${impact.pct_change.toFixed(1)}%)
+                <br>
+                <small>${formatVND(impact.prev_val)} → ${formatVND(impact.curr_val)}</small>
+              </li>
+            `;
+          });
+
+          html += `
+              </ul>
+            </div>
+          `;
+        }
+
+        html += `</div>`;
+      }
+    });
+
+    html += `</div>`;
+  }
+
+  // Risk periods
+  if (data.risk_periods && data.risk_periods.length > 0) {
+    html += `
+      <div class="analysis-section">
+        <h4>⚠️ Risk Periods</h4>
+        <div class="risk-periods">
+    `;
+
+    data.risk_periods.forEach(risk => {
+      const riskClass = risk.risk_level.toLowerCase();
+      html += `
+        <div class="risk-item ${riskClass}">
+          <div class="risk-badge">${risk.risk_level}</div>
+          <div class="risk-details">
+            <strong>${risk.period}</strong><br>
+            ${risk.description}
+          </div>
+        </div>
+      `;
+    });
+
+    html += `
+        </div>
+      </div>
+    `;
+  }
+
+  contentDiv.innerHTML = html;
+}
+
+function formatVND(amount) {
+  if (typeof amount !== 'number') return 'N/A';
+  return new Intl.NumberFormat('vi-VN').format(Math.round(amount)) + ' VND';
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   bindEvents();
-  checkHealth();
   seedNoFilesPlaceholder();
 
   // Keep outputs header localized (it has data-i18n already)
-  const title = el("outputsTitle");
+  const title = el("outputsHdr");
   if (title) title.textContent = t("downloadThisRun");
 });

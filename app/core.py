@@ -148,7 +148,7 @@ DEFAULT_CONFIG: dict = {
     # list of account code prefixes for which depreciation should be analyzed using only % change rules.
     "dep_pct_only_prefixes": ["217", "632"],  # treat these as %-only rules
     # list of keywords to identify a "customer" column in the P&L data.
-    "customer_column_hints": ["customer", "khách", "khach", "client", "buyer"],  # for 511* drilldown
+    "customer_column_hints": ["customer", "khách", "khach", "client", "buyer", "entity", "company", "subsidiary", "parent company", "bwid", "vc1", "vc2", "vc3", "logistics"],  # for 511* drilldown
 }
 
 MONTHS = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"]
@@ -1189,4 +1189,210 @@ def process_all(
     bio = io.BytesIO()
     wb.save(bio)
     return bio.getvalue()
+
+
+def clean_numeric_value(val):
+    """Convert value to numeric, handling various formats"""
+    if pd.isna(val):
+        return 0.0
+    if isinstance(val, (int, float)):
+        return float(val)
+    try:
+        return float(str(val).replace(',', '').replace(' ', ''))
+    except:
+        return 0.0
+
+
+def analyze_revenue_impact_from_bytes(xl_bytes: bytes, filename: str) -> dict:
+    """
+    Comprehensive revenue impact analysis from Excel bytes
+    Returns structured data for frontend display
+    """
+    try:
+        xls = pd.ExcelFile(io.BytesIO(xl_bytes))
+
+        if 'PL Breakdown' not in xls.sheet_names:
+            return {"error": "PL Breakdown sheet not found"}
+
+        pl_df = pd.read_excel(xls, sheet_name='PL Breakdown')
+
+        # Find data start row
+        data_start_row = None
+        for i, row in pl_df.iterrows():
+            if str(row.iloc[1]).strip().lower() == 'entity':
+                data_start_row = i
+                break
+
+        if data_start_row is None:
+            return {"error": "Could not find data start row with 'Entity' header"}
+
+        # Extract month columns
+        month_headers = pl_df.iloc[data_start_row + 1].fillna('').astype(str).tolist()
+        month_cols = []
+        for h2 in month_headers:
+            if any(month in str(h2) for month in ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug']):
+                month_cols.append(str(h2).strip())
+
+        # Extract data
+        data_df = pl_df.iloc[data_start_row + 2:].copy()
+        actual_col_count = len(data_df.columns)
+        new_columns = ['Account_Description', 'Entity', 'Account_Code']
+        new_columns.extend(month_cols)
+        while len(new_columns) < actual_col_count:
+            new_columns.append(f'Extra_{len(new_columns)}')
+        data_df.columns = new_columns[:actual_col_count]
+        data_df = data_df.dropna(how='all')
+
+        # Extract subsidiary name
+        subsidiary = extract_subsidiary_name_from_bytes(xl_bytes, filename)
+
+        # 1. Calculate total revenue by month
+        total_revenue_by_month = {}
+        for month in month_cols[:8]:
+            month_total = 0
+            for i, row in data_df.iterrows():
+                entity = str(row['Entity']) if 'Entity' in row and pd.notna(row['Entity']) else ''
+                if entity and entity != 'nan' and not entity.startswith('Total'):
+                    # Check if under a 511* revenue account
+                    for prev_i in range(max(0, i-10), i):
+                        if prev_i < len(data_df):
+                            prev_desc = str(data_df.iloc[prev_i]['Account_Description']) if pd.notna(data_df.iloc[prev_i]['Account_Description']) else ''
+                            if '511' in prev_desc and 'revenue' in prev_desc.lower():
+                                val = clean_numeric_value(row[month])
+                                month_total += val
+                                break
+            total_revenue_by_month[month] = month_total
+
+        # 2. Analyze revenue by account type
+        revenue_accounts = {}
+        current_account = None
+
+        for i, row in data_df.iterrows():
+            account_desc = str(row['Account_Description']) if pd.notna(row['Account_Description']) else ''
+            entity = str(row['Entity']) if pd.notna(row['Entity']) else ''
+
+            # Revenue account headers
+            if '511' in account_desc and 'revenue' in account_desc.lower():
+                current_account = account_desc
+                if current_account not in revenue_accounts:
+                    revenue_accounts[current_account] = {
+                        'entities': {},
+                        'monthly_totals': {month: 0 for month in month_cols[:8]}
+                    }
+
+            # Entity data under current account
+            elif current_account and entity and entity != 'nan' and not entity.startswith('Total'):
+                if entity not in revenue_accounts[current_account]['entities']:
+                    revenue_accounts[current_account]['entities'][entity] = {}
+
+                for month in month_cols[:8]:
+                    val = clean_numeric_value(row[month])
+                    revenue_accounts[current_account]['entities'][entity][month] = val
+                    revenue_accounts[current_account]['monthly_totals'][month] += val
+
+        # 3. Calculate changes and impacts
+        months = list(total_revenue_by_month.keys())
+        total_revenue_changes = []
+
+        for i in range(1, len(months)):
+            prev_month = months[i-1]
+            curr_month = months[i]
+            prev_val = total_revenue_by_month[prev_month]
+            curr_val = total_revenue_by_month[curr_month]
+            change = curr_val - prev_val
+            pct_change = (change / prev_val * 100) if prev_val != 0 else 0
+
+            total_revenue_changes.append({
+                'from': prev_month,
+                'to': curr_month,
+                'prev_value': prev_val,
+                'curr_value': curr_val,
+                'change': change,
+                'pct_change': pct_change
+            })
+
+        # 4. Account-level analysis with customer breakdowns
+        account_analysis = []
+
+        for account, data in revenue_accounts.items():
+            if not account.startswith('Total'):  # Skip total rows
+                months = list(data['monthly_totals'].keys())
+                account_changes = []
+
+                for i in range(1, len(months)):
+                    prev_month = months[i-1]
+                    curr_month = months[i]
+                    prev_val = data['monthly_totals'][prev_month]
+                    curr_val = data['monthly_totals'][curr_month]
+                    change = curr_val - prev_val
+                    pct_change = (change / prev_val * 100) if prev_val != 0 else 0
+
+                    account_changes.append({
+                        'from': prev_month,
+                        'to': curr_month,
+                        'change': change,
+                        'pct_change': pct_change,
+                        'prev_val': prev_val,
+                        'curr_val': curr_val
+                    })
+
+                # Find biggest change for customer analysis
+                biggest_change = max(account_changes, key=lambda x: abs(x['change'])) if account_changes else None
+                customer_impacts = []
+
+                if biggest_change and abs(biggest_change['change']) > 1000000:  # > 1M VND
+                    for entity, entity_data in data['entities'].items():
+                        prev_val = entity_data.get(biggest_change['from'], 0)
+                        curr_val = entity_data.get(biggest_change['to'], 0)
+                        entity_change = curr_val - prev_val
+
+                        if abs(entity_change) > 100000:  # > 100K VND
+                            customer_impacts.append({
+                                'entity': entity,
+                                'change': entity_change,
+                                'prev_val': prev_val,
+                                'curr_val': curr_val,
+                                'pct_change': (entity_change / prev_val * 100) if prev_val != 0 else 0
+                            })
+
+                    customer_impacts.sort(key=lambda x: abs(x['change']), reverse=True)
+
+                account_analysis.append({
+                    'account': account,
+                    'changes': account_changes,
+                    'biggest_change': biggest_change,
+                    'customer_impacts': customer_impacts[:5]  # Top 5
+                })
+
+        # 5. Risk analysis and gross margin calculation
+        risk_periods = []
+
+        # Simple gross margin estimation (would need cost data for full analysis)
+        for change in total_revenue_changes:
+            if abs(change['pct_change']) > 5:  # > 5% change
+                risk_level = "HIGH" if abs(change['pct_change']) > 20 else "MEDIUM"
+                risk_periods.append({
+                    'period': f"{change['from']} → {change['to']}",
+                    'change': change['change'],
+                    'pct_change': change['pct_change'],
+                    'risk_level': risk_level,
+                    'description': f"Revenue changed by {change['pct_change']:+.1f}%"
+                })
+
+        return {
+            "subsidiary": subsidiary,
+            "months_analyzed": months,
+            "total_revenue_trend": total_revenue_by_month,
+            "total_revenue_changes": total_revenue_changes,
+            "account_analysis": account_analysis,
+            "risk_periods": risk_periods,
+            "summary": {
+                "total_accounts": len([a for a in account_analysis if not a['account'].startswith('Total')]),
+                "highest_variance_account": max(account_analysis, key=lambda x: max([abs(c['change']) for c in x['changes']], default=0))['account'] if account_analysis else None,
+                "total_revenue_latest": total_revenue_by_month[months[-1]] if months else 0
+            }
+        }
+
+    except Exception as e:
+        return {"error": f"Analysis failed: {str(e)}"}
 
