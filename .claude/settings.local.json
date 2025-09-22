@@ -2,7 +2,13 @@
   "permissions": {
     "allow": [
       "Bash(mv:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(pip install:*)",
+      "Bash(python3:*)",
+      "Bash(uvicorn:*)",
+      "Bash(find:*)",
+      "Bash(pkill:*)",
+      "Bash(curl:*)"
     ],
     "deny": [],
     "ask": []

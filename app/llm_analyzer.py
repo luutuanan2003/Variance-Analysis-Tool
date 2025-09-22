@@ -1,54 +1,92 @@
 import json
 import io
+import os
 from typing import List, Dict, Any
 import pandas as pd
-import ollama
+from openai import OpenAI
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 
 class LLMFinancialAnalyzer:
-    def __init__(self, model_name: str = "llama3.1"):
-        """Initialize LLM analyzer with Ollama model."""
-        self.model_name = model_name
+    def __init__(self, model_name: str = "gpt-4o"):
+        """Initialize LLM analyzer with OpenAI GPT model."""
+        # Get OpenAI configuration from environment
+        self.openai_model = os.getenv("OPENAI_MODEL", "gpt-4o")
+        self.openai_api_key = os.getenv("OPENAI_API_KEY")
+
+        if not self.openai_api_key or self.openai_api_key == "your_openai_api_key_here":
+            raise ValueError(
+                "OpenAI API key not found! Please set OPENAI_API_KEY in your .env file.\n"
+                "Get your API key from: https://platform.openai.com/api-keys"
+            )
+
+        self.openai_client = OpenAI(api_key=self.openai_api_key)
+        print(f"🤖 Using OpenAI model: {self.openai_model}")
+        print(f"🔑 API key configured: {self.openai_api_key[:8]}...{self.openai_api_key[-4:]}")
 
     # ===========================
-    # Generation option profiles
+    # OpenAI API Methods
     # ===========================
-    def _max_ollama_options(self):
-        """
-        Maximum performance configuration using all available hardware resources.
-        Optimized for comprehensive analysis with hardware acceleration.
-        """
-        return {
-            "temperature": 0.15,   # Keep quality consistent
-            "top_p": 0.9,
-            "repeat_penalty": 1.1,
-            "num_ctx": 200_000,    # Large context for thorough analysis
-            "num_predict": 32_768, # Large output for comprehensive analysis of big files
-            "num_keep": 1024,      # Keep system prompt in memory
-            "num_thread": -1,      # Use ALL available CPU threads
-            "num_gpu": -1,         # Use ALL available GPU layers
-            "num_batch": 512,      # Larger batch size for GPU efficiency
-            "use_mlock": True,     # Lock model in memory to avoid swapping
-            "use_mmap": True,      # Memory map for faster loading
-        }
+    def _call_openai(self, system_prompt: str, user_prompt: str) -> dict:
+        """Call OpenAI API."""
+        try:
+            print(f"   🔄 Making OpenAI API call...")
+            print(f"      • Model: {self.openai_model}")
+            print(f"      • System prompt length: {len(system_prompt)} chars")
+            print(f"      • User prompt length: {len(user_prompt)} chars")
 
-    def _reduced_ollama_options(self, level=1):
-        """Automatic fallback profiles if OOM/timeout or server errors occur."""
-        profiles = [
-            {"num_ctx": 128_000, "num_predict": 20_480, "num_thread": -1, "num_gpu": -1, "num_batch": 256},
-            {"num_ctx": 64_000,  "num_predict": 16_384, "num_thread": -1, "num_gpu": -1, "num_batch": 128},
-            {"num_ctx": 32_000,  "num_predict": 12_288, "num_thread": -1, "num_gpu": -1, "num_batch": 64},
-        ]
-        base = {
-            "temperature": 0.15,
-            "top_p": 0.9,
-            "repeat_penalty": 1.1,
-            "use_mlock": True,
-            "use_mmap": True
-        }
-        p = profiles[min(level, len(profiles)-1)]
-        base.update(p)
-        return base
+            response = self.openai_client.chat.completions.create(
+                model=self.openai_model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                temperature=0.1,
+                max_tokens=4000
+            )
+
+            print(f"   ✅ OpenAI API call completed")
+            print(f"      • Response type: {type(response)}")
+
+            # Validate response structure
+            if not response:
+                raise RuntimeError("OpenAI API returned empty response")
+
+            print(f"      • Has choices: {hasattr(response, 'choices')}")
+            if not response.choices or len(response.choices) == 0:
+                raise RuntimeError("OpenAI API returned no choices")
+
+            print(f"      • Choices count: {len(response.choices)}")
+            if not response.choices[0].message:
+                raise RuntimeError("OpenAI API returned no message")
+
+            print(f"      • Has message: {hasattr(response.choices[0], 'message')}")
+            content = response.choices[0].message.content
+            print(f"      • Content type: {type(content)}")
+            print(f"      • Content length: {len(content) if content else 0}")
+
+            if content is None:
+                raise RuntimeError("OpenAI API returned None content")
+
+            # Return in consistent format
+            return {
+                "message": {
+                    "content": content
+                },
+                "prompt_eval_count": response.usage.prompt_tokens if response.usage else 0,
+                "eval_count": response.usage.completion_tokens if response.usage else 0,
+                "total_tokens": response.usage.total_tokens if response.usage else 0
+            }
+        except Exception as e:
+            print(f"   ❌ OpenAI API call failed: {str(e)}")
+            print(f"      • Error type: {type(e)}")
+            import traceback
+            print(f"      • Traceback: {traceback.format_exc()}")
+            raise RuntimeError(f"OpenAI API call failed: {str(e)}")
+
 
     # ===========================
     # Main entrypoints
@@ -64,7 +102,7 @@ class LLMFinancialAnalyzer:
         print(f"\n🔍 ===== STARTING RAW EXCEL ANALYSIS FOR {subsidiary} =====")
         print(f"📄 File: {filename}")
         print(f"📏 File Size: {len(excel_bytes):,} bytes ({len(excel_bytes)/1024:.1f} KB)")
-        print(f"🤖 Model: {self.model_name}")
+        print(f"🤖 Model: {self.openai_model}")
 
         try:
             print(f"\n📋 STEP 1: Loading Raw Excel Sheets")
@@ -82,21 +120,43 @@ class LLMFinancialAnalyzer:
             print(f"\n📝 STEP 2: Converting to CSV for AI Analysis")
             print(f"   🔄 Converting raw Excel data to CSV format...")
 
-            # Convert raw DataFrames to CSV strings
-            bs_csv = bs_raw.to_csv(index=False, header=False)  # No headers, pure raw data
-            pl_csv = pl_raw.to_csv(index=False, header=False)  # No headers, pure raw data
+            # Convert raw DataFrames to CSV - keep all rows but optimize format
+            # Remove completely empty rows and columns to reduce token usage
+            bs_clean = bs_raw.dropna(how='all').dropna(axis=1, how='all')
+            pl_clean = pl_raw.dropna(how='all').dropna(axis=1, how='all')
 
-            print(f"   ✅ CSV conversion complete:")
-            print(f"      • BS CSV: {len(bs_csv):,} characters")
-            print(f"      • PL CSV: {len(pl_csv):,} characters")
+            # Use more compact CSV format but INCLUDE headers so AI can see period names
+            bs_csv = bs_clean.to_csv(index=False, header=True, quoting=1, float_format='%.0f')
+            pl_csv = pl_clean.to_csv(index=False, header=True, quoting=1, float_format='%.0f')
+
+            print(f"   ✅ CSV conversion complete (optimized format):")
+            print(f"      • BS CSV: {len(bs_csv):,} characters (from {len(bs_raw)} rows to {len(bs_clean)} rows)")
+            print(f"      • PL CSV: {len(pl_csv):,} characters (from {len(pl_raw)} rows to {len(pl_clean)} rows)")
+
+            # Debug: Show sample of CSV data
+            print(f"   🔍 Debug: BS CSV sample (first 500 chars):")
+            print(f"      {bs_csv[:500]}...")
+            print(f"   🔍 Debug: PL CSV sample (first 500 chars):")
+            print(f"      {pl_csv[:500]}...")
 
             print(f"\n📝 STEP 3: Creating AI Analysis Prompt")
+
+            # Check if data will exceed token limits and chunk if necessary
+            estimated_prompt_length = len(bs_csv) + len(pl_csv) + 10000  # Add system prompt overhead
+            estimated_tokens = estimated_prompt_length // 4
+
+            print(f"   📊 Token estimation:")
+            print(f"      • Estimated prompt length: {estimated_prompt_length:,} characters")
+            print(f"      • Estimated input tokens: {estimated_tokens:,}")
+
+            if estimated_tokens > 25000:  # Leave buffer for 30k limit
+                print(f"   ⚠️  Data too large, implementing chunking strategy...")
+                return self._analyze_with_chunking(bs_clean, pl_clean, subsidiary, filename, config)
+
             prompt = self._create_raw_excel_prompt(bs_csv, pl_csv, subsidiary, filename, config)
             prompt_length = len(prompt)
-            estimated_tokens = prompt_length // 4
             print(f"   ✅ Prompt generation complete:")
             print(f"      • Total prompt length: {prompt_length:,} characters")
-            print(f"      • Estimated input tokens: {estimated_tokens:,}")
 
             print(f"\n🤖 STEP 4: AI Model Processing")
             response = None
@@ -104,26 +164,19 @@ class LLMFinancialAnalyzer:
             attempt = 1
 
             try:
-                print(f"   🚀 Attempt {attempt}: Maximum performance configuration")
-                options = self._max_ollama_options()
-                print(f"      • Context window: {options['num_ctx']:,} tokens")
-                print(f"      • Max output: {options['num_predict']:,} tokens")
+                print(f"   🚀 Attempt {attempt}: OpenAI GPT-4o processing")
                 print(f"   🔄 Sending complete raw Excel data to AI...")
 
-                response = ollama.chat(
-                    model=self.model_name,
-                    messages=[
-                        {"role": "system", "content": self._get_raw_excel_system_prompt()},
-                        {"role": "user", "content": prompt}
-                    ],
-                    options=options
+                response = self._call_openai(
+                    system_prompt=self._get_raw_excel_system_prompt(),
+                    user_prompt=prompt
                 )
 
                 # Extract token usage information if available
-                if response and 'prompt_eval_count' in response:
-                    input_tokens = response.get('prompt_eval_count', 0)
+                if response and 'total_tokens' in response:
+                    input_tokens = response.get('total_tokens', 0)
                     output_tokens = response.get('eval_count', 0)
-                    total_tokens = input_tokens + output_tokens
+                    total_tokens = response.get('total_tokens', 0)
                     print(f"   📊 Token Usage:")
                     print(f"      • Input tokens: {input_tokens:,}")
                     print(f"      • Output tokens: {output_tokens:,}")
@@ -148,15 +201,34 @@ class LLMFinancialAnalyzer:
                 }]
 
             print(f"\n📄 STEP 5: Processing AI Response")
-            if not response or 'message' not in response or not response['message'] or 'content' not in response['message']:
-                print(f"   ❌ Invalid response structure from Ollama")
-                raise RuntimeError("Empty response payload from Ollama")
+            print(f"   🔍 Debug: Response type: {type(response)}")
+            print(f"   🔍 Debug: Response keys: {list(response.keys()) if response else 'None'}")
+
+            if not response:
+                print(f"   ❌ Response is None or empty")
+                raise RuntimeError("OpenAI API returned None response")
+
+            if 'message' not in response:
+                print(f"   ❌ No 'message' key in response")
+                raise RuntimeError("OpenAI API response missing 'message' key")
+
+            if not response['message']:
+                print(f"   ❌ Response message is None")
+                raise RuntimeError("OpenAI API response message is None")
+
+            if 'content' not in response['message']:
+                print(f"   ❌ No 'content' key in message")
+                raise RuntimeError("OpenAI API response missing 'content' key")
+
+            if response['message']['content'] is None:
+                print(f"   ❌ Response content is None")
+                raise RuntimeError("OpenAI API returned None content")
 
             result = response['message']['content'] or ""
             response_length = len(result)
 
             # Extract final token usage from successful response
-            total_input_tokens = response.get('prompt_eval_count', 0)
+            total_input_tokens = response.get('total_tokens', 0)
             total_output_tokens = response.get('eval_count', 0)
             total_tokens_used = total_input_tokens + total_output_tokens
 
@@ -167,8 +239,7 @@ class LLMFinancialAnalyzer:
                 print(f"      • Total Input Tokens: {total_input_tokens:,}")
                 print(f"      • Total Output Tokens: {total_output_tokens:,}")
                 print(f"      • TOTAL TOKENS USED: {total_tokens_used:,}")
-                print(f"      • Model: {self.model_name}")
-                print(f"      • Using Ollama (Local): FREE ✅")
+                print(f"      • Model: {self.openai_model}")
 
             print(f"   📝 Response preview: {result[:200]}...")
 
@@ -186,7 +257,7 @@ class LLMFinancialAnalyzer:
             print(f"\n🎉 ===== RAW EXCEL AI ANALYSIS COMPLETE FOR {subsidiary} =====")
             print(f"📊 Final Results: {len(anomalies)} anomalies identified")
             if total_tokens_used > 0:
-                print(f"🔢 Processing Summary: {total_tokens_used:,} tokens used (FREE with Ollama)")
+                print(f"🔢 Processing Summary: {total_tokens_used:,} tokens used (FREE with OpenAI)")
             print()
             return anomalies
 
@@ -217,7 +288,7 @@ class LLMFinancialAnalyzer:
         print(f"📊 Input Data Validation:")
         print(f"   • Balance Sheet: {len(bs_df)} rows, {len(bs_df.columns)} columns")
         print(f"   • Profit & Loss: {len(pl_df)} rows, {len(pl_df.columns)} columns")
-        print(f"   • Model: {self.model_name}")
+        print(f"   • Model: {self.openai_model}")
 
         # Quick sanity checks (both sheets should be non-empty by the time we get here)
         if pl_df is None or pl_df.empty:
@@ -228,7 +299,7 @@ class LLMFinancialAnalyzer:
             raise ValueError("Balance Sheet data is empty or None")
 
         """
-        Analyze financial data using LLaMA to detect anomalies and provide explanations.
+        Analyze financial data using OpenAI ChatGPT API to detect anomalies and provide explanations.
         Returns a list of anomaly dictionaries.
         """
         # Step 1: Convert DataFrames to simple CSV format for AI
@@ -261,27 +332,19 @@ class LLMFinancialAnalyzer:
         attempt = 1
 
         try:
-            print(f"   🚀 Attempt {attempt}: Maximum performance configuration")
-            options = self._max_ollama_options()
-            print(f"      • Context window: {options['num_ctx']:,} tokens")
-            print(f"      • Max output: {options['num_predict']:,} tokens")
-            print(f"      • Temperature: {options['temperature']}")
-            print(f"   🔄 Sending request to Ollama...")
+            print(f"   🚀 Attempt {attempt}: OpenAI GPT processing")
+            print(f"   🔄 Sending request to OpenAI...")
 
-            response = ollama.chat(
-                model=self.model_name,
-                messages=[
-                    {"role": "system", "content": self._get_system_prompt()},
-                    {"role": "user", "content": prompt}
-                ],
-                options=options
+            response = self._call_openai(
+                system_prompt=self._get_system_prompt(),
+                user_prompt=prompt
             )
 
             # Extract token usage information if available
-            if response and 'prompt_eval_count' in response:
-                input_tokens = response.get('prompt_eval_count', 0)
+            if response and 'total_tokens' in response:
+                input_tokens = response.get('total_tokens', 0)
                 output_tokens = response.get('eval_count', 0)
-                total_tokens = input_tokens + output_tokens
+                total_tokens = response.get('total_tokens', 0)
                 print(f"   📊 Token Usage:")
                 print(f"      • Input tokens: {input_tokens:,}")
                 print(f"      • Output tokens: {output_tokens:,}")
@@ -292,27 +355,20 @@ class LLMFinancialAnalyzer:
         except Exception as e1:
             attempt = 2
             print(f"   ⚠️ Attempt 1 failed: {str(e1)[:100]}...")
-            print(f"   🚀 Attempt {attempt}: Reduced performance configuration")
+            print(f"   🚀 Attempt {attempt}: Retry with OpenAI GPT-4o")
             try:
-                options = self._reduced_ollama_options(level=1)
-                print(f"      • Context window: {options['num_ctx']:,} tokens")
-                print(f"      • Max output: {options['num_predict']:,} tokens")
-                print(f"   🔄 Retrying with reduced settings...")
+                print(f"   🔄 Retrying with OpenAI API...")
 
-                response = ollama.chat(
-                    model=self.model_name,
-                    messages=[
-                        {"role": "system", "content": self._get_system_prompt()},
-                        {"role": "user", "content": prompt}
-                    ],
-                    options=options
+                response = self._call_openai(
+                    system_prompt=self._get_raw_excel_system_prompt(),
+                    user_prompt=prompt
                 )
 
                 # Extract token usage information if available
-                if response and 'prompt_eval_count' in response:
-                    input_tokens = response.get('prompt_eval_count', 0)
+                if response and 'total_tokens' in response:
+                    input_tokens = response.get('total_tokens', 0)
                     output_tokens = response.get('eval_count', 0)
-                    total_tokens = input_tokens + output_tokens
+                    total_tokens = response.get('total_tokens', 0)
                     print(f"   📊 Token Usage:")
                     print(f"      • Input tokens: {input_tokens:,}")
                     print(f"      • Output tokens: {output_tokens:,}")
@@ -323,25 +379,18 @@ class LLMFinancialAnalyzer:
             except Exception as e2:
                 attempt = 3
                 print(f"   ⚠️ Attempt 2 failed: {str(e2)[:100]}...")
-                print(f"   🚀 Attempt {attempt}: Minimum configuration (last resort)")
+                print(f"   🚀 Attempt {attempt}: Final retry with OpenAI GPT-4o")
                 try:
-                    options = self._reduced_ollama_options(level=2)
-                    print(f"      • Context window: {options['num_ctx']:,} tokens")
-                    print(f"      • Max output: {options['num_predict']:,} tokens")
-                    print(f"   🔄 Final retry with minimal settings...")
+                    print(f"   🔄 Final retry with OpenAI API...")
 
-                    response = ollama.chat(
-                        model=self.model_name,
-                        messages=[
-                            {"role": "system", "content": self._get_system_prompt()},
-                            {"role": "user", "content": prompt}
-                        ],
-                        options=options
+                    response = self._call_openai(
+                        system_prompt=self._get_raw_excel_system_prompt(),
+                        user_prompt=prompt
                     )
 
                     # Extract token usage information if available
-                    if response and 'prompt_eval_count' in response:
-                        input_tokens = response.get('prompt_eval_count', 0)
+                    if response and 'total_tokens' in response:
+                        input_tokens = response.get('total_tokens', 0)
                         output_tokens = response.get('eval_count', 0)
                         total_tokens = input_tokens + output_tokens
                         print(f"   📊 Token Usage:")
@@ -354,13 +403,13 @@ class LLMFinancialAnalyzer:
                 except Exception as e3:
                     print(f"   ❌ All attempts failed!")
                     print(f"      • Final error: {str(e3)}")
-                    print(f"      • Check Ollama server status and model availability")
+                    print(f"      • Check OpenAI server status and model availability")
                     return [{
                         "subsidiary": subsidiary,
                         "account_code": "SYSTEM_ERROR",
                         "rule_name": "AI Analysis Error",
                         "description": f"AI analysis failed after 3 attempts: {str(e3)[:100]}...",
-                        "details": f"All retry strategies exhausted. Last error: {str(e3)}. Check if Ollama is running and {self.model_name} model is available.",
+                        "details": f"All retry strategies exhausted. Last error: {str(e3)}. Check if OpenAI is running and {self.openai_model} model is available.",
                         "current_value": 0,
                         "previous_value": 0,
                         "change_amount": 0,
@@ -373,15 +422,15 @@ class LLMFinancialAnalyzer:
         print(f"\n📄 STEP 4: Response Processing")
         try:
             if not response or 'message' not in response or not response['message'] or 'content' not in response['message']:
-                print(f"   ❌ Invalid response structure from Ollama")
-                raise RuntimeError("Empty response payload from Ollama (no message.content)")
+                print(f"   ❌ Invalid response structure from OpenAI")
+                raise RuntimeError("Empty response payload from OpenAI (no message.content)")
 
             result = response['message']['content'] or ""
             response_length = len(result)
             estimated_output_tokens = response_length // 4
 
             # Extract final token usage from successful response
-            total_input_tokens = response.get('prompt_eval_count', 0)
+            total_input_tokens = response.get('total_tokens', 0)
             total_output_tokens = response.get('eval_count', 0)
             total_tokens_used = total_input_tokens + total_output_tokens
 
@@ -395,14 +444,13 @@ class LLMFinancialAnalyzer:
                 print(f"      • Total Input Tokens: {total_input_tokens:,}")
                 print(f"      • Total Output Tokens: {total_output_tokens:,}")
                 print(f"      • TOTAL TOKENS USED: {total_tokens_used:,}")
-                print(f"      • Model: {self.model_name}")
+                print(f"      • Model: {self.openai_model}")
 
                 # Estimate cost for reference (OpenAI pricing for comparison)
                 if total_tokens_used > 0:
                     gpt4_cost = (total_input_tokens * 0.00003) + (total_output_tokens * 0.00006)  # GPT-4 pricing
                     print(f"      • Estimated cost if using GPT-4: ${gpt4_cost:.4f}")
-                    print(f"      • Using Ollama (Local): FREE ✅")
-            print(f"   📝 Response preview: {result[:200]}...")
+                print(f"   📝 Response preview: {result[:200]}...")
 
             # Debug: Check if response looks like JSON
             stripped = result.strip()
@@ -431,7 +479,7 @@ class LLMFinancialAnalyzer:
             print(f"\n🎉 ===== AI ANALYSIS COMPLETE FOR {subsidiary} =====")
             print(f"📊 Final Results: {len(anomalies)} anomalies identified")
             if total_tokens_used > 0:
-                print(f"🔢 Processing Summary: {total_tokens_used:,} tokens used (FREE with Ollama)")
+                print(f"🔢 Processing Summary: {total_tokens_used:,} tokens used (FREE with OpenAI)")
             print()
             return anomalies
         except Exception as e:
@@ -449,6 +497,48 @@ class LLMFinancialAnalyzer:
                 "severity": "Low",
                 "sheet_type": "Error"
             }]
+
+    def _analyze_with_chunking(self, bs_df, pl_df, subsidiary, filename, config):
+        """Analyze large datasets by processing in chunks."""
+        print(f"   🔄 Starting chunked analysis...")
+
+        all_anomalies = []
+
+        # Split BS data into chunks
+        bs_chunk_size = 150
+        pl_chunk_size = 75
+
+        for i in range(0, len(bs_df), bs_chunk_size):
+            bs_chunk = bs_df.iloc[i:i+bs_chunk_size]
+
+            # For each BS chunk, process with a smaller PL chunk
+            for j in range(0, len(pl_df), pl_chunk_size):
+                pl_chunk = pl_df.iloc[j:j+pl_chunk_size]
+
+                print(f"   📊 Processing chunk BS[{i}:{i+len(bs_chunk)}] + PL[{j}:{j+len(pl_chunk)}]")
+
+                bs_csv = bs_chunk.to_csv(index=False, header=True, quoting=1, float_format='%.0f')
+                pl_csv = pl_chunk.to_csv(index=False, header=True, quoting=1, float_format='%.0f')
+
+                prompt = self._create_raw_excel_prompt(bs_csv, pl_csv, subsidiary, filename, config)
+
+                try:
+                    response = self._call_openai(
+                        system_prompt=self._get_raw_excel_system_prompt(),
+                        user_prompt=prompt
+                    )
+
+                    if response and response.get('message', {}).get('content'):
+                        chunk_anomalies = self._parse_llm_response(response['message']['content'], subsidiary)
+                        all_anomalies.extend(chunk_anomalies)
+                        print(f"      ✅ Found {len(chunk_anomalies)} anomalies in this chunk")
+
+                except Exception as e:
+                    print(f"      ⚠️  Chunk failed: {str(e)[:100]}...")
+                    continue
+
+        print(f"   ✅ Chunked analysis complete: {len(all_anomalies)} total anomalies")
+        return all_anomalies
 
     # ===========================
     # Data preparation (more permissive)
@@ -577,9 +667,13 @@ class LLMFinancialAnalyzer:
 🎯 ANALYSIS APPROACH:
 You will receive the complete raw Excel sheets exactly as they appear in the file, including:
 - All headers, section dividers, and formatting
-- Account codes like 111, 112, 627001, 511001, etc.
+- Account codes in various formats:
+  * Simple codes: (111), (112), (120), (121) - Balance Sheet accounts
+  * Long codes: 511000000, 627000000, 641000000 - P&L accounts
+  * Numbered items: "1. Tien (111)", "2. Cac khoan tuong duong tien (112)"
 - Account names in Vietnamese and English
-- All monthly data columns
+- All monthly data columns with actual financial values
+- Section headers like "TAI SAN NGAN HAN (100)", "NGUON VON"
 - Empty rows and structural elements
 
 🔍 FOCUS AREAS (Vietnamese Chart of Accounts):
@@ -589,15 +683,37 @@ You will receive the complete raw Excel sheets exactly as they appear in the fil
 4. OTHER MATERIAL ACCOUNTS: Any accounts with significant balances or changes
 
 📊 ANALYSIS INSTRUCTIONS:
-1. Examine the raw data to identify the latest 2-3 periods (rightmost columns with data)
-2. Look for account codes (3-6 digit numbers) and their corresponding values
-3. Calculate percentage and absolute changes between periods
-4. Identify patterns, anomalies, and unusual movements
-5. Focus on accounts with material balances (>50M VND) or significant changes (>20%)
+1. ACCOUNT DETECTION: Automatically identify account codes and names:
+   - BS accounts: Look for patterns like "(111)", "(112)", "1. Tien (111)", "2. Cac khoan..."
+   - PL accounts: Look for patterns like "511000000", "627000000", "Revenue from sale"
+   - Extract the numeric codes (111, 112, 511000000, etc.) and descriptive names
+   - Match account codes with their corresponding financial values
+
+2. PERIOD IDENTIFICATION: Find the actual period names from column headers:
+   - Extract EXACT period names from the CSV column headers (first row)
+   - Use the ACTUAL period names like "As of Jan 2025", "Dec 2024", "Nov 2024", etc.
+   - Do NOT use generic terms like "current" or "previous" - use the real period names
+   - Focus on the rightmost 2-3 columns with actual financial data
+
+3. VALUE EXTRACTION: Extract actual financial amounts for each account:
+   - Look for large numbers (typically 8+ digits for VND amounts)
+   - Handle different formats: 2,249,885,190.00, 46,000,000,000.00, etc.
+   - Ignore zero or empty values unless they represent significant changes
+
+4. CHANGE CALCULATION: Calculate meaningful changes between periods:
+   - Absolute changes: Current - Previous (in VND)
+   - Percentage changes: (Current - Previous) / |Previous| * 100
+   - Focus on accounts with material balances (>100M VND) or significant changes (>15%)
+
+5. PATTERN RECOGNITION: Identify unusual movements and anomalies:
+   - Sudden increases/decreases without business justification
+   - Seasonal patterns that don't match expectations
+   - Related account movements that don't correlate properly
 
 💰 MATERIALITY THRESHOLDS:
-- Revenue-based: 5% of total revenue or 200M VND (whichever is lower)
-- Balance-based: 1% of total assets or 500M VND (whichever is lower)
+- Revenue-based: 2% of total revenue or 50M VND (whichever is lower)
+- Balance-based: 0.5% of total assets or 100M VND (whichever is lower)
+- Focus on ANY account with changes >10% or unusual patterns
 - Always explain your materiality reasoning
 
 ⚡ CRITICAL OUTPUT REQUIREMENTS:
@@ -605,19 +721,38 @@ You will receive the complete raw Excel sheets exactly as they appear in the fil
 2. Start with [ and end with ]
 3. No markdown, no ```json blocks, no additional text
 4. Each anomaly must include actual account values from the Excel data
-5. If no anomalies found, return empty array: []
+5. YOU MUST FIND ANOMALIES - analyze every account with numerical data
+6. Look for: month-over-month changes, unusual balances, percentage variations >5%
+7. MANDATORY: Identify patterns in Revenue (511*), Utilities (627*/641*), Cash (111*), any significant changes
+8. Only return empty array [] if literally no numerical financial data exists in the sheets
 
-📋 REQUIRED JSON FORMAT:
+📋 REQUIRED JSON FORMAT WITH REAL EXAMPLES:
 [{
-  "account": "511001-Product Sales Revenue",
-  "description": "Revenue decreased 15% month-over-month without business justification",
-  "explanation": "Sales revenue dropped from 2.5B to 2.1B VND between Oct-Nov 2025, requiring investigation of customer contracts and market conditions",
-  "current_value": 2100000000,
-  "previous_value": 2500000000,
-  "change_amount": -400000000,
-  "change_percent": -16.0,
-  "severity": "High"
+  "account": "111-Tien",
+  "description": "Cash balance increased significantly without clear source",
+  "explanation": "Cash (111) increased from 2.2B to 2.6B VND, requiring verification of large deposits and transfers. Investigate source of 400M VND cash inflow.",
+  "current_value": 2600000000,
+  "previous_value": 2200000000,
+  "change_amount": 400000000,
+  "change_percent": 18.2,
+  "severity": "Medium"
+},
+{
+  "account": "511000000-Revenue from sale and service provision",
+  "description": "Revenue pattern shows unusual monthly variation",
+  "explanation": "Service revenue fluctuated from 26.2M to 28.1M VND without seasonal justification. Review customer contracts and delivery schedules.",
+  "current_value": 28100000,
+  "previous_value": 26200000,
+  "change_amount": 1900000,
+  "change_percent": 7.3,
+  "severity": "Low"
 }]
+
+🎯 ACCOUNT CODE EXTRACTION EXAMPLES:
+- From "1. Tien (111)" → Extract: "111-Tien"
+- From "2. Cac khoan tuong duong tien (112)" → Extract: "112-Cac khoan tuong duong tien"
+- From "511000000 - Revenue from sale and service provision" → Extract: "511000000-Revenue from sale and service provision"
+- From "627000000 - Cost of goods sold" → Extract: "627000000-Cost of goods sold"
 
 🚨 REQUIREMENTS:
 - current_value: MUST be actual amount from Excel (number, not zero)
@@ -625,6 +760,7 @@ You will receive the complete raw Excel sheets exactly as they appear in the fil
 - change_amount: MUST be current_value - previous_value (number)
 - change_percent: MUST be actual percentage change (number)
 - All values must be real numbers extracted from the Excel data
+- CRITICAL: Use ACTUAL period names from the CSV headers, not "current" or "previous"
 
 ANALYZE THOROUGHLY. The raw Excel data contains the complete picture - use all available information to provide comprehensive financial analysis."""
 
@@ -650,25 +786,45 @@ Analysis Type: Comprehensive anomaly detection on raw Excel data
 You are analyzing the COMPLETE raw Excel data above. This includes all formatting, headers, account codes, and financial values exactly as they appear in the original Excel file.
 
 🎯 ANALYSIS FOCUS:
-1. Identify the account structure and period columns in the raw data
-2. Extract meaningful financial data from the structured format
-3. Focus on Vietnamese Chart of Accounts: 511* (Revenue), 627*/641* (Utilities), 515*/635* (Interest)
-4. Calculate changes between the latest available periods
-5. Identify material anomalies requiring audit attention
+1. AUTOMATIC ACCOUNT DETECTION:
+   - Scan raw CSV for account patterns: "(111)", "(112)", "1. Tien (111)", "511000000", etc.
+   - Extract account codes and match with descriptive names
+   - Build account-to-value mappings from the raw Excel structure
 
-📊 ANALYSIS STEPS:
-1. Parse the raw CSV data to understand the Excel structure
-2. Identify account codes and their corresponding values
-3. Find the latest 2-3 periods with data
-4. Calculate absolute and percentage changes
-5. Apply materiality thresholds appropriate for company size
-6. Focus on significant variances and unusual patterns
+2. PERIOD COLUMN IDENTIFICATION:
+   - Find period headers like "As of Jan 2025", "As of Feb 2025", etc.
+   - Identify which columns contain actual financial values (not zeros)
+   - Focus on the rightmost 2-3 columns with meaningful data
+
+3. VALUE EXTRACTION AND ANALYSIS:
+   - Extract actual VND amounts for each detected account
+   - Calculate month-over-month changes automatically
+   - Focus on Vietnamese Chart of Accounts: 511* (Revenue), 627*/641* (Utilities), 515*/635* (Interest)
+   - Identify material anomalies based on account patterns and changes
+
+📊 DETAILED ANALYSIS STEPS:
+1. PARSE RAW STRUCTURE: Understand the Excel layout from CSV data
+2. EXTRACT ACCOUNTS: Find all account codes and names automatically
+   - Balance Sheet: Look for "(111)", "(112)", "(120)" pattern accounts
+   - P&L: Look for "511000000", "627000000", "641000000" pattern accounts
+3. IDENTIFY PERIODS: Find the latest financial periods with data
+4. CALCULATE CHANGES: Compute absolute and percentage changes between periods
+5. APPLY MATERIALITY: Focus on accounts >100M VND or changes >15%
+6. DETECT ANOMALIES: Identify unusual patterns requiring audit attention
+
+🎯 SPECIFIC ACCOUNT PATTERNS TO DETECT:
+- Cash accounts: "Tien (111)", "Cac khoan tuong duong tien (112)"
+- Revenue accounts: "511000000 - Revenue from sale and service provision"
+- Expense accounts: "627000000 - Cost of goods sold", "641000000 - Sales expenses"
+- Interest accounts: "515000000 - Financial income", "635000000 - Financial expenses"
 
 💡 CONTEXT AWARENESS:
 - Vietnamese business environment (Tet holidays, regulatory changes)
 - Seasonal patterns in revenue and expenses
 - Industry-specific considerations
 - Related account relationships (e.g., revenue vs utilities scaling)
+
+🚨 CRITICAL INSTRUCTION: You are analyzing real financial data. There WILL be variance patterns to detect. Do NOT return an empty array unless there is literally no numerical data in the sheets. Analyze every account with values and identify at least 3-5 significant patterns, changes, or anomalies.
 
 Return detailed JSON analysis with specific findings from the raw Excel data."""
 
@@ -1023,10 +1179,10 @@ Contains Analysis: {'Yes' if has_insights else 'No'}
 {analysis_content}{'...' if response and len(response) > 800 else ''}
 
 💡 TROUBLESHOOTING:
-- Check Ollama model availability (llama3.1)
+- Check OpenAI API key validity
 - Ensure JSON output compliance
 - Try reprocessing / different model / smaller input
-- Check Ollama logs
+- Check OpenAI logs
 """,
             "current_value": 0,
             "previous_value": 0,
@@ -1036,25 +1192,3 @@ Contains Analysis: {'Yes' if has_insights else 'No'}
             "sheet_type": "Error"
         }]
 
-    # ===========================
-    # Model helpers
-    # ===========================
-    def check_model_availability(self) -> bool:
-        try:
-            models = ollama.list()
-            available_models = [model['name'] for model in models['models']]
-            return self.model_name in available_models
-        except Exception as e:
-            print(f"Error checking model availability: {e}")
-            return False
-
-    def pull_model_if_needed(self) -> bool:
-        try:
-            if not self.check_model_availability():
-                print(f"Pulling model {self.model_name}...")
-                ollama.pull(self.model_name)
-                return True
-            return True
-        except Exception as e:
-            print(f"Error pulling model: {e}")
-            return False

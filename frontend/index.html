@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>AI Variance Analysis Tool</title>
-  <link rel="stylesheet" href="/frontend/styles.css?v=3" />
+  <link rel="stylesheet" href="/frontend/styles.css?v=4" />
 </head>
 <body>
   <header>
@@ -57,10 +57,40 @@
         </div>
       </div>
 
-      <div class="processing-status" id="processingStatus" style="display: none;">
-        <h3 class="section-title">⚙️ Processing Status</h3>
-        <div class="status-steps" id="statusSteps">
-          <!-- Dynamic status steps will be added here -->
+      <div class="progress-container" id="progressContainer" style="display: none;">
+        <h3 class="section-title">🤖 AI Analysis Progress</h3>
+
+        <!-- Progress Bar -->
+        <div class="progress-bar-wrapper">
+          <div class="progress-bar" style="background: #e5e7eb; height: 24px; border-radius: 12px; overflow: hidden;">
+            <div class="progress-fill" id="progressFill" style="height: 100%; background: linear-gradient(90deg, #3b82f6, #1d4ed8); border-radius: 12px; transition: width 0.5s ease; width: 0%;"></div>
+          </div>
+          <div class="progress-percentage" id="progressPercentage" style="font-weight: bold; color: #1e40af; font-size: 18px; min-width: 50px; text-align: center; background: #f0f9ff; padding: 4px 8px; border-radius: 8px;">0%</div>
+        </div>
+
+        <!-- Progress Stages -->
+        <div class="progress-stages">
+          <div class="stage" id="stage-upload">
+            <div class="stage-icon">📤</div>
+            <div class="stage-text">Upload</div>
+          </div>
+          <div class="stage" id="stage-analyze">
+            <div class="stage-icon">🧠</div>
+            <div class="stage-text">AI Analysis</div>
+          </div>
+          <div class="stage" id="stage-generate">
+            <div class="stage-icon">📊</div>
+            <div class="stage-text">Generate Report</div>
+          </div>
+          <div class="stage" id="stage-complete">
+            <div class="stage-icon">✅</div>
+            <div class="stage-text">Complete</div>
+          </div>
+        </div>
+
+        <!-- Current Status -->
+        <div class="current-status" id="currentStatus">
+          <span class="status-text">Preparing analysis...</span>
         </div>
       </div>
 
@@ -68,12 +98,6 @@
 
       <div class="row">
         <button id="runBtn" class="btn primary" data-i18n="processBtn">🚀 Analyze with AI</button>
-        <span id="liveStatus" class="pill idle" data-i18n="idle">Ready</span>
-      </div>
-
-      <div class="field" style="margin-top:12px;">
-        <label for="response" data-i18n="response">Analysis Progress</label>
-        <div id="response" class="status" aria-live="polite"></div>
       </div>
     </section>
 
@@ -103,7 +127,6 @@
 
       <div class="download-section" id="downloadSection" style="display: none;">
         <h3 data-i18n="downloadTitle">📥 Download Results</h3>
-        <button id="downloadBtn" class="btn" data-i18n="downloadBtn">Download Analysis</button>
       </div>
     </section>
   </main>
@@ -189,7 +212,154 @@
     switchLanguage("en");
   </script>
 
-  <!-- Bump cache-buster when script changes -->
-  <script src="/frontend/script.js?v=1" defer></script>
+  <script>
+    console.log("🚀 INLINE SCRIPT EXECUTING!");
+
+    document.addEventListener("DOMContentLoaded", () => {
+      console.log("✅ DOM LOADED!");
+      const runBtn = document.getElementById("runBtn");
+
+      if (runBtn) {
+        runBtn.addEventListener("click", function(event) {
+          event.preventDefault();
+
+          const excelInput = document.getElementById("excel");
+          if (!excelInput?.files?.length) {
+            alert("Please select at least one Excel file");
+            return;
+          }
+
+          const progressContainer = document.getElementById("progressContainer");
+          if (progressContainer) {
+            progressContainer.style.display = "block";
+          }
+
+          runBtn.disabled = true;
+          runBtn.innerHTML = '🔄 Processing...';
+
+          const fd = new FormData();
+          for (const file of excelInput.files) {
+            fd.append("excel_files", file);
+          }
+
+          fetch('/start_analysis', { method: "POST", body: fd })
+            .then(response => response.json())
+            .then(data => {
+              runBtn.innerHTML = '🤖 AI Analyzing...';
+
+              const eventSource = new EventSource(`/logs/${data.session_id}`);
+
+              function updateProgress(percentage, stage, statusText) {
+                const progressFill = document.getElementById("progressFill");
+                const progressPercentage = document.getElementById("progressPercentage");
+                const currentStatus = document.getElementById("currentStatus");
+
+                if (progressFill) {
+                  progressFill.style.width = percentage + "%";
+                }
+                if (progressPercentage) {
+                  progressPercentage.textContent = percentage + "%";
+                }
+                if (currentStatus && statusText) {
+                  const statusElement = currentStatus.querySelector('.status-text');
+                  if (statusElement) {
+                    statusElement.textContent = statusText;
+                  }
+                }
+
+                // Update stage indicators
+                const stages = ['upload', 'analyze', 'generate', 'complete'];
+                stages.forEach((stageName) => {
+                  const stageEl = document.getElementById("stage-" + stageName);
+                  if (stageEl) {
+                    stageEl.classList.remove('active', 'completed');
+
+                    if (stageName === stage) {
+                      stageEl.classList.add('active');
+                    } else if (stages.indexOf(stageName) < stages.indexOf(stage)) {
+                      stageEl.classList.add('completed');
+                    }
+                  }
+                });
+              }
+
+              eventSource.onmessage = function(event) {
+                const logData = JSON.parse(event.data);
+
+                if (logData.type === 'progress') {
+                  let stage = 'upload';
+                  if (logData.percentage >= 25 && logData.percentage < 85) {
+                    stage = 'analyze';
+                    runBtn.innerHTML = '🧠 AI Analyzing...';
+                  } else if (logData.percentage >= 85 && logData.percentage < 100) {
+                    stage = 'generate';
+                    runBtn.innerHTML = '📊 Generating Report...';
+                  } else if (logData.percentage >= 100) {
+                    stage = 'complete';
+                  }
+
+                  updateProgress(logData.percentage, stage, logData.message);
+                } else if (logData.type === 'complete') {
+                  updateProgress(100, 'complete', 'Analysis completed successfully!');
+                  runBtn.innerHTML = '✅ Complete!';
+                  eventSource.close();
+
+                  // Show download section
+                  const downloadSection = document.getElementById("downloadSection");
+                  if (downloadSection) {
+                    downloadSection.style.display = "block";
+
+                    // Add main download button if not already present
+                    if (!downloadSection.querySelector('.main-download-btn')) {
+                      const mainDownloadBtn = document.createElement("button");
+                      mainDownloadBtn.className = "btn primary main-download-btn";
+                      mainDownloadBtn.innerHTML = "📊 Download Analysis Results";
+                      mainDownloadBtn.style.marginBottom = "10px";
+                      mainDownloadBtn.onclick = () => downloadMainResult(data.session_id);
+
+                      const downloadTitle = downloadSection.querySelector('h3');
+                      if (downloadTitle) {
+                        downloadTitle.parentNode.insertBefore(mainDownloadBtn, downloadTitle.nextSibling);
+                      }
+                    }
+                  }
+                } else if (logData.type === 'error') {
+                  updateProgress(0, 'upload', 'Error: ' + logData.message);
+                  runBtn.innerHTML = '❌ Error';
+                  eventSource.close();
+                }
+              };
+            })
+            .catch(error => {
+              alert("Error: " + error.message);
+              runBtn.disabled = false;
+              runBtn.innerHTML = '🚀 Analyze with AI';
+            });
+        });
+      }
+
+      // Download function
+      window.downloadMainResult = async function(sessionId) {
+        try {
+          const response = await fetch(`/download/${sessionId}`);
+          if (!response.ok) {
+            throw new Error(`Download failed: ${response.status}`);
+          }
+
+          const blob = await response.blob();
+          const url = window.URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = `ai_variance_analysis_${sessionId}.xlsx`;
+          document.body.appendChild(a);
+          a.click();
+          window.URL.revokeObjectURL(url);
+          document.body.removeChild(a);
+        } catch (error) {
+          alert("Download failed: " + error.message);
+        }
+      };
+    });
+  </script>
 </body>
 </html>

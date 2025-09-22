@@ -66,8 +66,8 @@ warnings.filterwarnings("ignore")  # Avoid noisy pandas dtype warnings in logs
 DEFAULT_CONFIG: dict = {
     # Enable LLM-based anomaly detection (always True for AI-only mode)
     "use_llm_analysis": True,
-    # LLM model to use for analysis
-    "llm_model": "llama3.1",
+    # LLM model to use for analysis (compatibility with existing code, actual model determined by .env)
+    "llm_model": "gpt-4o",
 }
 
 MONTHS = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"]
@@ -423,8 +423,8 @@ def build_anoms_raw_excel(
 
     print(f"\n🧠 Starting RAW EXCEL AI analysis for '{sub}'...")
     try:
-        llm_analyzer = LLMFinancialAnalyzer(CONFIG.get("llm_model", "llama3.1"))
-        print(f"✅ AI analyzer initialized with model: {CONFIG.get('llm_model', 'llama3.1')}")
+        llm_analyzer = LLMFinancialAnalyzer(CONFIG.get("llm_model", "gpt-4o"))
+        print(f"✅ AI analyzer initialized with model: {CONFIG.get('llm_model', 'gpt-4o')}")
 
         print(f"\n🔍 Running AI analysis on complete raw Excel file...")
         llm_anomalies = llm_analyzer.analyze_raw_excel_file(excel_bytes, filename, sub, CONFIG)
@@ -460,7 +460,7 @@ def build_anoms_raw_excel(
             "Trigger(s)": "Raw Excel AI Analysis Failed",
             "Suggested likely cause": f"Raw Excel AI error: {str(e)[:100]}...",
             "Status": "Error",
-            "Notes": "Check if Ollama is running and model is available",
+            "Notes": "Check if OpenAI is running and model is available",
         }])
         print(f"⚠️  Returning error record to continue processing other files")
         return error_record
@@ -508,8 +508,8 @@ def build_anoms(
 
     print(f"\n🧠 Initializing AI analyzer for '{sub}'...")
     try:
-        llm_analyzer = LLMFinancialAnalyzer(CONFIG.get("llm_model", "llama3.1"))
-        print(f"✅ AI analyzer initialized with model: {CONFIG.get('llm_model', 'llama3.1')}")
+        llm_analyzer = LLMFinancialAnalyzer(CONFIG.get("llm_model", "gpt-4o"))
+        print(f"✅ AI analyzer initialized with model: {CONFIG.get('llm_model', 'gpt-4o')}")
 
         print(f"\n🔍 Running AI analysis on financial data...")
         llm_anomalies = llm_analyzer.analyze_financial_data(bs_data, pl_data, sub, CONFIG)
@@ -544,9 +544,9 @@ def build_anoms(
     except Exception as e:
         print(f"\n❌ AI analysis failed for '{sub}': {e}")
         print(f"🔧 Troubleshooting suggestions:")
-        print(f"   • Check if Ollama is running: 'ollama serve'")
-        print(f"   • Verify model availability: 'ollama list'")
-        print(f"   • Check model name: '{CONFIG.get('llm_model', 'llama3.1')}'")
+        print(f"   • Check OpenAI API key is valid in .env file")
+        print(f"   • Verify OpenAI service status at https://status.openai.com/")
+        print(f"   • Check model name: '{CONFIG.get('llm_model', 'gpt-4o')}'")
 
         # Graceful error handling: return informative error record instead of failing
         # This ensures the analysis continues for other subsidiaries even if AI fails
@@ -559,7 +559,7 @@ def build_anoms(
             "Trigger(s)": "AI Analysis Failed",
             "Suggested likely cause": f"AI model error: {str(e)[:100]}...",
             "Status": "Error",
-            "Notes": "Check if Ollama is running and model is available",
+            "Notes": "Check if OpenAI is running and model is available",
         }])
         print(f"⚠️  Returning error record to continue processing other files")
         return error_record
@@ -767,11 +767,12 @@ def apply_excel_formatting_ws(ws, anomaly_df: pd.DataFrame, CONFIG: dict) -> Non
 # - Maintains data integrity through in-memory processing
 def process_all(
     files: list[tuple[str, bytes]],
-    CONFIG: dict = DEFAULT_CONFIG
+    CONFIG: dict = DEFAULT_CONFIG,
+    progress_callback=None
 ) -> tuple[bytes, list[tuple[str, bytes]]]:
     print(f"\n🚀 ===== STARTING AI VARIANCE ANALYSIS PROCESSING =====\n")
     print(f"📥 Processing {len(files)} Excel file(s) for AI analysis")
-    print(f"🤖 LLM Model: {CONFIG.get('llm_model', 'llama3.1')}")
+    print(f"🤖 LLM Model: {CONFIG.get('llm_model', 'gpt-4o')}")
     print(f"🔧 AI-Only Mode: {CONFIG.get('use_llm_analysis', True)}")
 
     # === EXCEL WORKBOOK INITIALIZATION ===
@@ -787,13 +788,26 @@ def process_all(
     print(f"\n🔄 Starting processing loop for {len(files)} file(s)...\n")
 
     for file_idx, (fname, xl_bytes) in enumerate(files, 1):
+        # Calculate progress range for this file (30% to 80% of total)
+        file_start = 30 + ((file_idx - 1) * 50 // len(files))
+        file_end = 30 + (file_idx * 50 // len(files))
+
+        if progress_callback:
+            progress_callback(file_start, f"Processing file {file_idx}/{len(files)}: {fname}")
+
         print(f"\n📁 ===== PROCESSING FILE {file_idx}/{len(files)} =====\n")
         print(f"📄 File: {fname}")
         print(f"📏 File Size: {len(xl_bytes):,} bytes ({len(xl_bytes)/1024:.1f} KB)")
 
+        if progress_callback:
+            progress_callback(file_start + 2, f"Extracting subsidiary name from {fname}")
+
         print(f"\n🏢 Extracting subsidiary name...")
         sub = extract_subsidiary_name_from_bytes(xl_bytes, fname)
         print(f"✅ Subsidiary: '{sub}'")
+
+        if progress_callback:
+            progress_callback(file_start + 5, f"Validating Excel sheets for {sub}")
 
         print(f"\n🔍 Validating required Excel sheets...")
         try:
@@ -810,10 +824,16 @@ def process_all(
             raise ValueError(f"Cannot read Excel file '{fname}': {e}") from e
 
         # === RAW EXCEL AI ANALYSIS ===
+        if progress_callback:
+            progress_callback(file_start + 10, f"Starting AI analysis for {sub}")
+
         print(f"\n🤖 Starting RAW EXCEL AI analysis for '{sub}'...")
         print(f"📄 Passing complete raw Excel file to AI (no data cleaning)")
         print(f"🎯 AI will focus on 'BS Breakdown' and 'PL Breakdown' sheets")
         anoms = build_anoms_raw_excel(sub, xl_bytes, fname, CONFIG)
+
+        if progress_callback:
+            progress_callback(file_end - 5, f"AI analysis complete for {sub}")
 
         if anoms is not None and not anoms.empty:
             print(f"✅ AI analysis completed successfully")

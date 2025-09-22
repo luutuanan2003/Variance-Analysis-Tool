@@ -8,7 +8,7 @@ import threading
 import queue
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Tuple
 from contextlib import redirect_stdout, redirect_stderr
 
 from fastapi import FastAPI, UploadFile, File, HTTPException
@@ -103,36 +103,50 @@ async def start_analysis(
                 # Test that log capture works
                 log_capture.write("🔧 Log capture initialized successfully")
 
+                def progress_update(percentage, message):
+                    log_capture.queue.put(f"__PROGRESS__{percentage}__{message}")
+
                 with redirect_stdout(log_capture), redirect_stderr(log_capture):
+                    progress_update(10, "Starting AI variance analysis...")
                     print("🤖 Starting AI-only variance analysis...")
+
+                    progress_update(15, "Loading Excel files...")
                     print(f"📤 Loaded {len(files)} Excel files for AI analysis")
 
+                    progress_update(20, "Configuring AI analysis settings...")
                     # Use AI-only configuration (no user input needed)
                     CONFIG = {**DEFAULT_CONFIG}
                     CONFIG["use_llm_analysis"] = True  # Force AI mode
-                    CONFIG["llm_model"] = "llama3.1"
+                    CONFIG["llm_model"] = "gpt-4o"
 
+                    progress_update(25, "AI determining thresholds and focus areas...")
                     print("🧠 AI will autonomously determine all thresholds and focus areas")
 
+                    progress_update(30, "Beginning AI analysis of financial data...")
                     # Process with AI-only mode
                     xlsx_bytes, debug_files = process_all(
                         files=files,
                         CONFIG=CONFIG,
+                        progress_callback=progress_update
                     )
 
+                    progress_update(85, "AI analysis complete, storing results...")
                     # Store results for download
                     for debug_name, debug_bytes in debug_files:
                         file_key = f"{session_id}_{debug_name}"
                         debug_files_store[file_key] = (debug_name, debug_bytes)
 
+                    progress_update(90, "Preparing main analysis file...")
                     # Store main result
                     main_file_key = f"{session_id}_main_result"
                     debug_files_store[main_file_key] = (f"ai_variance_analysis_{session_id}.xlsx", xlsx_bytes)
 
+                    progress_update(95, "Finalizing results...")
                     print("✅ AI analysis complete!")
                     if debug_files:
                         print(f"📄 Debug files ready for download")
 
+                    progress_update(100, "Analysis complete - ready for download!")
                     # Signal completion
                     log_capture.queue.put("__ANALYSIS_COMPLETE__")
 
@@ -175,6 +189,19 @@ async def stream_logs(session_id: str):
                     error_msg = message[9:]  # Remove __ERROR__ prefix
                     yield f"data: {json.dumps({'type': 'error', 'message': error_msg})}\n\n"
                     break
+                elif message.startswith("__PROGRESS__"):
+                    # Parse progress message: __PROGRESS__<percentage>__<message>
+                    parts = message.split("__")
+                    if len(parts) >= 4:
+                        try:
+                            percentage = int(parts[2])
+                            progress_msg = parts[3]
+                            yield f"data: {json.dumps({'type': 'progress', 'percentage': percentage, 'message': progress_msg})}\n\n"
+                        except ValueError:
+                            # If parsing fails, treat as regular log
+                            yield f"data: {json.dumps({'type': 'log', 'message': message})}\n\n"
+                    else:
+                        yield f"data: {json.dumps({'type': 'log', 'message': message})}\n\n"
                 else:
                     yield f"data: {json.dumps({'type': 'log', 'message': message})}\n\n"
 
