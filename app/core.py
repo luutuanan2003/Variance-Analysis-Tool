@@ -1306,6 +1306,78 @@ def _add_revenue_analysis_to_sheet(ws, revenue_analysis: dict):
             row += 1
         row += 1
 
+    # Revenue by Account & Customer Impact Analysis - DETAILED BREAKDOWN
+    if revenue_analysis.get('revenue_by_account'):
+        ws[f"A{row}"] = "REVENUE BY ACCOUNT & CUSTOMER IMPACT ANALYSIS"
+        ws[f"A{row}"].font = section_font
+        row += 1
+
+        for account_name, account_data in revenue_analysis['revenue_by_account'].items():
+            if account_data.get('biggest_change') and abs(account_data['biggest_change'].get('change', 0)) > 1000000:
+                # Account header
+                ws[f"A{row}"] = f"Account: {account_name}"
+                ws[f"A{row}"].font = Font(bold=True, size=11, color="1F4788")
+                row += 1
+
+                # Account biggest change
+                biggest_change = account_data['biggest_change']
+                ws[f"A{row}"] = "Biggest Change Period"
+                ws[f"B{row}"] = f"{biggest_change.get('from', '')} → {biggest_change.get('to', '')}"
+                ws[f"A{row}"].font = Font(bold=True)
+                row += 1
+
+                ws[f"A{row}"] = "Change Amount"
+                ws[f"B{row}"] = format_vnd(biggest_change.get('change', 0))
+                ws[f"A{row}"].font = Font(bold=True)
+                row += 1
+
+                ws[f"A{row}"] = "Change Percentage"
+                ws[f"B{row}"] = f"{biggest_change.get('pct_change', 0):+.1f}%"
+                ws[f"A{row}"].font = Font(bold=True)
+                row += 1
+
+                # Customer impacts table
+                if account_data.get('customer_impacts'):
+                    row += 1
+                    ws[f"A{row}"] = "TOP CUSTOMER IMPACTS:"
+                    ws[f"A{row}"].font = Font(bold=True, color="8B0000")
+                    row += 1
+
+                    # Customer impact headers
+                    impact_headers = ["Customer/Entity", "Previous Value", "Current Value", "Change (VND)", "Change (%)"]
+                    for col, header in enumerate(impact_headers, 1):
+                        cell = ws.cell(row=row, column=col, value=header)
+                        cell.font = Font(bold=True, color="FFFFFF")
+                        cell.fill = PatternFill(start_color="5B9BD5", end_color="5B9BD5", fill_type="solid")
+                        cell.border = thin_border
+                    row += 1
+
+                    # Customer impact data
+                    for impact in account_data['customer_impacts']:
+                        ws[f"A{row}"] = impact.get('entity', '')
+                        ws[f"B{row}"] = format_vnd(impact.get('prev_val', 0))
+                        ws[f"C{row}"] = format_vnd(impact.get('curr_val', 0))
+                        ws[f"D{row}"] = format_vnd(impact.get('change', 0))
+                        ws[f"E{row}"] = f"{impact.get('pct_change', 0):+.1f}%"
+
+                        # Color code positive/negative changes
+                        change_val = impact.get('change', 0)
+                        if change_val > 0:
+                            fill_color = PatternFill(start_color="E8F5E8", end_color="E8F5E8", fill_type="solid")
+                        elif change_val < 0:
+                            fill_color = PatternFill(start_color="FFEBEE", end_color="FFEBEE", fill_type="solid")
+                        else:
+                            fill_color = None
+
+                        for col in range(1, 6):
+                            cell = ws.cell(row=row, column=col)
+                            if fill_color:
+                                cell.fill = fill_color
+                            cell.border = thin_border
+                        row += 1
+
+                row += 2  # Space between accounts
+
     # Gross Margin Analysis
     if revenue_analysis.get('gross_margin_analysis', {}).get('trend'):
         ws[f"A{row}"] = "GROSS MARGIN ANALYSIS"
@@ -1313,7 +1385,7 @@ def _add_revenue_analysis_to_sheet(ws, revenue_analysis: dict):
         row += 1
 
         # Headers
-        headers = ["Month", "Revenue", "Cost", "Gross Margin %"]
+        headers = ["Month", "Revenue", "Cost", "Gross Margin %", "Change from Previous"]
         for col, header in enumerate(headers, 1):
             cell = ws.cell(row=row, column=col, value=header)
             cell.font = header_font
@@ -1321,14 +1393,71 @@ def _add_revenue_analysis_to_sheet(ws, revenue_analysis: dict):
             cell.border = thin_border
         row += 1
 
+        prev_margin = None
         for margin_data in revenue_analysis['gross_margin_analysis']['trend']:
             ws[f"A{row}"] = margin_data.get('month', '')
             ws[f"B{row}"] = format_vnd(margin_data.get('revenue', 0))
             ws[f"C{row}"] = format_vnd(margin_data.get('cost', 0))
             ws[f"D{row}"] = f"{margin_data.get('gross_margin_pct', 0):.1f}%"
 
-            for col in range(1, 5):
+            # Calculate change from previous month
+            current_margin = margin_data.get('gross_margin_pct', 0)
+            if prev_margin is not None:
+                change = current_margin - prev_margin
+                ws[f"E{row}"] = f"{change:+.1f}pp"
+                # Color code margin changes
+                if change > 0:
+                    ws.cell(row=row, column=5).fill = PatternFill(start_color="E8F5E8", end_color="E8F5E8", fill_type="solid")
+                elif change < 0:
+                    ws.cell(row=row, column=5).fill = PatternFill(start_color="FFEBEE", end_color="FFEBEE", fill_type="solid")
+            else:
+                ws[f"E{row}"] = "N/A"
+
+            prev_margin = current_margin
+
+            for col in range(1, 6):
                 ws.cell(row=row, column=col).border = thin_border
+            row += 1
+        row += 1
+
+    # Utility Analysis (if available)
+    if revenue_analysis.get('utility_analysis'):
+        ws[f"A{row}"] = "UTILITY REVENUE VS COST ANALYSIS"
+        ws[f"A{row}"].font = section_font
+        row += 1
+
+        if revenue_analysis['utility_analysis'].get('available') and revenue_analysis['utility_analysis'].get('margins'):
+            # Headers
+            headers = ["Month", "Utility Revenue", "Utility Cost", "Margin (VND)", "Margin %"]
+            for col, header in enumerate(headers, 1):
+                cell = ws.cell(row=row, column=col, value=header)
+                cell.font = header_font
+                cell.fill = header_fill
+                cell.border = thin_border
+            row += 1
+
+            for margin in revenue_analysis['utility_analysis']['margins']:
+                ws[f"A{row}"] = margin.get('month', '')
+                ws[f"B{row}"] = format_vnd(margin.get('revenue', 0))
+                ws[f"C{row}"] = format_vnd(margin.get('cost', 0))
+                ws[f"D{row}"] = format_vnd(margin.get('revenue', 0) - margin.get('cost', 0))
+                ws[f"E{row}"] = f"{margin.get('margin_pct', 0):.1f}%"
+
+                # Color code utility margins
+                margin_pct = margin.get('margin_pct', 0)
+                if margin_pct >= 0:
+                    fill_color = PatternFill(start_color="E8F5E8", end_color="E8F5E8", fill_type="solid")
+                else:
+                    fill_color = PatternFill(start_color="FFEBEE", end_color="FFEBEE", fill_type="solid")
+
+                for col in range(1, 6):
+                    cell = ws.cell(row=row, column=col)
+                    cell.fill = fill_color
+                    cell.border = thin_border
+                row += 1
+        else:
+            ws[f"A{row}"] = "Utility accounts not found in the data."
+            ws[f"A{row}"].font = Font(italic=True, color="666666")
             row += 1
         row += 1
 
