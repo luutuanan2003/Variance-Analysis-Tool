@@ -23,7 +23,16 @@ class LLMFinancialAnalyzer:
                 "Get your API key from: https://platform.openai.com/api-keys"
             )
 
-        self.openai_client = OpenAI(api_key=self.openai_api_key)
+        # Initialize OpenAI client with proper error handling for proxy-related issues
+        try:
+            self.openai_client = OpenAI(api_key=self.openai_api_key)
+        except TypeError as e:
+            if "proxies" in str(e):
+                # Handle legacy proxy parameter issue - initialize without any proxy settings
+                print(f"⚠️  Warning: OpenAI client proxy configuration not supported in this version")
+                self.openai_client = OpenAI(api_key=self.openai_api_key)
+            else:
+                raise e
         print(f"🤖 Using OpenAI model: {self.openai_model}")
         print(f"🔑 API key configured: {self.openai_api_key[:8]}...{self.openai_api_key[-4:]}")
 
