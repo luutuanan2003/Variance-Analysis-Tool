@@ -3,7 +3,8 @@
     "allow": [
       "Bash(curl:*)",
       "Bash(pkill:*)",
-      "Bash(uvicorn:*)"
+      "Bash(uvicorn:*)",
+      "Bash(python:*)"
     ],
     "deny": [],
     "ask": []

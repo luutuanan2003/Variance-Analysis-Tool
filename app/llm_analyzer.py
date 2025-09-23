@@ -1,6 +1,7 @@
 import json
 import io
 import os
+import sys
 from typing import List, Dict, Any
 import pandas as pd
 from openai import OpenAI
@@ -13,6 +14,10 @@ load_dotenv()
 class LLMFinancialAnalyzer:
     def __init__(self, model_name: str = "gpt-4o"):
         """Initialize LLM analyzer with OpenAI GPT model."""
+        # Debug information for cloud deployments
+        print(f"🔧 Python version: {sys.version}")
+        print(f"🔧 Environment: {'RENDER' if os.getenv('RENDER') else 'LOCAL'}")
+
         # Get OpenAI configuration from environment
         self.openai_model = os.getenv("OPENAI_MODEL", "gpt-4o")
         self.openai_api_key = os.getenv("OPENAI_API_KEY")
@@ -23,18 +28,80 @@ class LLMFinancialAnalyzer:
                 "Get your API key from: https://platform.openai.com/api-keys"
             )
 
-        # Initialize OpenAI client with proper error handling for proxy-related issues
-        try:
-            self.openai_client = OpenAI(api_key=self.openai_api_key)
-        except TypeError as e:
-            if "proxies" in str(e):
-                # Handle legacy proxy parameter issue - initialize without any proxy settings
-                print(f"⚠️  Warning: OpenAI client proxy configuration not supported in this version")
-                self.openai_client = OpenAI(api_key=self.openai_api_key)
-            else:
-                raise e
+        # Initialize OpenAI client with comprehensive error handling for deployment environments
+        client_kwargs = {"api_key": self.openai_api_key}
+
+        # Try multiple initialization approaches for different environments
+        initialization_attempts = [
+            lambda: OpenAI(**client_kwargs),
+            lambda: OpenAI(api_key=self.openai_api_key),  # Explicit API key only
+            lambda: self._init_openai_minimal(),  # Minimal initialization for cloud environments
+        ]
+
+        self.openai_client = None
+        last_error = None
+
+        for attempt_num, init_func in enumerate(initialization_attempts, 1):
+            try:
+                print(f"🔄 Attempting OpenAI client initialization (attempt {attempt_num})...")
+                self.openai_client = init_func()
+                print(f"✅ OpenAI client initialized successfully on attempt {attempt_num}")
+                break
+            except TypeError as e:
+                last_error = e
+                error_msg = str(e).lower()
+                print(f"⚠️  Attempt {attempt_num} failed: {e}")
+
+                if "proxies" in error_msg:
+                    print("   → Issue related to proxy parameter - trying next approach")
+                    continue
+                elif "unexpected keyword argument" in error_msg:
+                    print("   → Unexpected parameter issue - trying simpler initialization")
+                    continue
+                else:
+                    print(f"   → Unknown TypeError: {e}")
+                    continue
+            except Exception as e:
+                last_error = e
+                print(f"⚠️  Attempt {attempt_num} failed with unexpected error: {e}")
+                continue
+
+        if self.openai_client is None:
+            raise RuntimeError(f"Failed to initialize OpenAI client after {len(initialization_attempts)} attempts. Last error: {last_error}")
         print(f"🤖 Using OpenAI model: {self.openai_model}")
         print(f"🔑 API key configured: {self.openai_api_key[:8]}...{self.openai_api_key[-4:]}")
+
+    def _init_openai_minimal(self):
+        """Minimal OpenAI initialization for cloud environments that may have issues with advanced parameters."""
+        # Clear any proxy-related environment variables that might interfere
+        proxy_vars = ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy']
+        original_values = {}
+        for var in proxy_vars:
+            if var in os.environ:
+                original_values[var] = os.environ[var]
+                del os.environ[var]
+                print(f"   → Temporarily cleared {var} environment variable")
+
+        try:
+            # Import fresh to avoid any cached module issues
+            import importlib
+            openai_module = importlib.import_module('openai')
+            OpenAIClient = getattr(openai_module, 'OpenAI')
+
+            # Initialize with only the most basic parameters
+            client = OpenAIClient(api_key=self.openai_api_key)
+
+            # Restore original environment variables
+            for var, value in original_values.items():
+                os.environ[var] = value
+
+            return client
+        except Exception as e:
+            print(f"   → Minimal initialization also failed: {e}")
+            # Restore environment variables even if failed
+            for var, value in original_values.items():
+                os.environ[var] = value
+            raise e
 
     # ===========================
     # OpenAI API Methods
