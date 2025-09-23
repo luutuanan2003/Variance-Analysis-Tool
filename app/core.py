@@ -621,6 +621,195 @@ def build_anoms_ai_mode(
         print(f"⚠️  Returning error record to continue processing other files")
         return error_record
 
+def analyze_comprehensive_revenue_impact_ai(
+    excel_bytes: bytes,
+    filename: str,
+    sub: str,
+    CONFIG: dict = DEFAULT_CONFIG
+) -> dict:
+    """
+    AI-powered comprehensive revenue impact analysis matching core.py functionality.
+    Uses enhanced AI prompts to provide detailed 511/641/642 analysis with entity-level insights.
+    """
+    print(f"\n🎯 ===== AI COMPREHENSIVE REVENUE IMPACT ANALYSIS =====")
+    print(f"📁 File: {filename}")
+    print(f"🏢 Subsidiary: {sub}")
+
+    if not AI_AVAILABLE:
+        return {
+            "error": "AI analyzer not available - install required dependencies",
+            "subsidiary": sub,
+            "filename": filename
+        }
+
+    try:
+        # Initialize AI analyzer
+        llm_analyzer = LLMFinancialAnalyzer(CONFIG.get("llm_model", "gpt-4o"))
+        print(f"✅ AI analyzer initialized with model: {CONFIG.get('llm_model', 'gpt-4o')}")
+
+        # Run comprehensive revenue impact analysis
+        print(f"\n🔍 Running AI comprehensive revenue impact analysis...")
+        ai_analysis_results = llm_analyzer.analyze_comprehensive_revenue_impact(
+            excel_bytes, filename, sub, CONFIG
+        )
+        print(f"✅ AI comprehensive analysis completed with {len(ai_analysis_results)} insights")
+
+        # Convert AI results to structured format matching core.py output
+        print(f"\n📊 Converting AI results to comprehensive revenue analysis structure...")
+
+        analysis_result = {
+            'subsidiary': sub,
+            'filename': filename,
+            'months_analyzed': [],  # Will be populated from AI analysis
+            'total_revenue_analysis': {},
+            'revenue_by_account': {},
+            'gross_margin_analysis': {},
+            'utility_analysis': {},
+            'sga_641_analysis': {},
+            'sga_642_analysis': {},
+            'combined_sga_analysis': {},
+            'risk_assessment': [],
+            'summary': {},
+            'ai_insights': ai_analysis_results  # Include raw AI insights
+        }
+
+        # Process AI results and populate analysis structure
+        revenue_accounts = {}
+        sga_641_accounts = {}
+        sga_642_accounts = {}
+        total_revenue_changes = []
+        risk_assessment = []
+
+        for insight in ai_analysis_results:
+            analysis_type = insight.get('analysis_type', 'general')
+
+            if analysis_type == 'total_revenue_trend':
+                # Extract total revenue trend data
+                details = insight.get('details', {})
+                monthly_totals = details.get('monthly_totals', {})
+                biggest_changes = details.get('biggest_changes', [])
+
+                analysis_result['total_revenue_analysis'] = {
+                    'monthly_totals': monthly_totals,
+                    'changes': biggest_changes
+                }
+
+                if monthly_totals:
+                    analysis_result['months_analyzed'] = list(monthly_totals.keys())
+
+            elif analysis_type == 'revenue_by_account':
+                # Extract individual revenue account data
+                account_name = insight.get('account', 'Unknown')
+                details = insight.get('details', {})
+
+                revenue_accounts[account_name] = {
+                    'monthly_totals': details.get('monthly_totals', {}),
+                    'entity_impacts': details.get('entity_impacts', []),
+                    'changes': [],  # Could be enhanced
+                    'biggest_change': {
+                        'change': insight.get('change_amount', 0),
+                        'pct_change': insight.get('change_percent', 0),
+                        'from': 'Previous',
+                        'to': 'Current'
+                    }
+                }
+
+            elif analysis_type == 'sga_641_analysis':
+                # Extract SG&A 641 account data
+                account_name = insight.get('account', 'Unknown')
+                details = insight.get('details', {})
+
+                sga_641_accounts[account_name] = {
+                    'monthly_totals': details.get('monthly_totals', {}),
+                    'entity_impacts': details.get('entity_impacts', []),
+                    'changes': [],
+                    'biggest_change': {
+                        'change': insight.get('change_amount', 0),
+                        'pct_change': insight.get('change_percent', 0),
+                        'from': 'Previous',
+                        'to': 'Current'
+                    }
+                }
+
+            elif analysis_type == 'sga_642_analysis':
+                # Extract SG&A 642 account data
+                account_name = insight.get('account', 'Unknown')
+                details = insight.get('details', {})
+
+                sga_642_accounts[account_name] = {
+                    'monthly_totals': details.get('monthly_totals', {}),
+                    'entity_impacts': details.get('entity_impacts', []),
+                    'changes': [],
+                    'biggest_change': {
+                        'change': insight.get('change_amount', 0),
+                        'pct_change': insight.get('change_percent', 0),
+                        'from': 'Previous',
+                        'to': 'Current'
+                    }
+                }
+
+            elif analysis_type == 'combined_sga_ratio':
+                # Extract combined SG&A ratio analysis
+                details = insight.get('details', {})
+                sga_ratio_trend = details.get('sga_ratio_trend', [])
+                ratio_changes = details.get('ratio_changes', [])
+
+                analysis_result['combined_sga_analysis'] = {
+                    'ratio_trend': sga_ratio_trend,
+                    'monthly_totals': {},  # Could be calculated from ratio_trend
+                    'total_641_accounts': len(sga_641_accounts),
+                    'total_642_accounts': len(sga_642_accounts)
+                }
+
+            # Add to risk assessment if severity is high
+            if insight.get('severity', '').lower() in ['high', 'medium']:
+                risk_assessment.append({
+                    'type': analysis_type.replace('_', ' ').title(),
+                    'period': 'AI Analysis',
+                    'risk_level': insight.get('severity', 'Medium').upper(),
+                    'description': insight.get('explanation', insight.get('description', ''))
+                })
+
+        # Populate the analysis result structure
+        analysis_result['revenue_by_account'] = revenue_accounts
+        analysis_result['sga_641_analysis'] = sga_641_accounts
+        analysis_result['sga_642_analysis'] = sga_642_accounts
+        analysis_result['risk_assessment'] = risk_assessment
+
+        # Create summary
+        latest_month = analysis_result['months_analyzed'][-1] if analysis_result['months_analyzed'] else 'N/A'
+        total_revenue_latest = 0
+        total_sga_latest = 0
+
+        if analysis_result['total_revenue_analysis'].get('monthly_totals'):
+            monthly_totals = analysis_result['total_revenue_analysis']['monthly_totals']
+            if latest_month in monthly_totals:
+                total_revenue_latest = monthly_totals[latest_month]
+
+        analysis_result['summary'] = {
+            'total_accounts': len(revenue_accounts),
+            'total_sga_641_accounts': len(sga_641_accounts),
+            'total_sga_642_accounts': len(sga_642_accounts),
+            'total_revenue_latest': total_revenue_latest,
+            'total_sga_latest': total_sga_latest,
+            'sga_ratio_latest': (total_sga_latest / total_revenue_latest * 100) if total_revenue_latest > 0 else 0,
+            'risk_periods': [r for r in risk_assessment if r['risk_level'] == 'HIGH'],
+            'ai_insights_count': len(ai_analysis_results)
+        }
+
+        print(f"✅ AI comprehensive revenue analysis conversion completed")
+        print(f"📊 Structure: {len(revenue_accounts)} revenue accounts, {len(sga_641_accounts)} SG&A 641 accounts, {len(sga_642_accounts)} SG&A 642 accounts")
+
+        return analysis_result
+
+    except Exception as e:
+        print(f"\n❌ AI comprehensive revenue analysis failed: {str(e)}")
+        return {
+            "error": f"AI comprehensive analysis failed: {str(e)}",
+            "subsidiary": sub,
+            "filename": filename
+        }
+
 # -----------------------------------------------------------------------------
 # Python Analysis Mode (Traditional Rule-Based)
 # -----------------------------------------------------------------------------

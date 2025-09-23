@@ -17,7 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from .core import process_all, DEFAULT_CONFIG, analyze_revenue_impact_from_bytes, analyze_comprehensive_revenue_impact_from_bytes
+from .core import process_all, DEFAULT_CONFIG, analyze_revenue_impact_from_bytes, analyze_comprehensive_revenue_impact_from_bytes, analyze_comprehensive_revenue_impact_ai
 
 # ---------------------------------------------------------------------
 # App initialization
@@ -469,3 +469,39 @@ async def list_debug_files(session_id: str):
             })
 
     return {"session_id": session_id, "files": session_files}
+
+# ---------------------------------------------------------------------
+# AI Comprehensive Revenue Impact Analysis endpoint
+# ---------------------------------------------------------------------
+@app.post("/analyze-comprehensive-revenue-ai")
+async def analyze_comprehensive_revenue_ai_endpoint(
+    excel_file: UploadFile = File(...),
+):
+    """
+    AI-Powered Comprehensive Revenue Impact Analysis
+    Uses enhanced AI prompts to provide detailed analysis matching core.py functionality:
+    1. Total revenue trend analysis (511* accounts)
+    2. Individual revenue account breakdowns with entity impacts
+    3. SG&A 641* account analysis with entity-level variances
+    4. SG&A 642* account analysis with entity-level variances
+    5. Combined SG&A ratio analysis (% of revenue)
+    6. Entity-level impact identification for all material changes
+    """
+    try:
+        # Read the uploaded file
+        file_bytes = await excel_file.read()
+        filename = excel_file.filename or "input.xlsx"
+
+        # Extract subsidiary name from filename for AI analysis
+        subsidiary = filename.replace('.xlsx', '').replace('.xls', '').replace('_', ' ').title()
+
+        # Run AI comprehensive revenue impact analysis
+        print(f"\n🤖 Starting AI comprehensive revenue analysis for {filename}")
+        analysis_result = analyze_comprehensive_revenue_impact_ai(file_bytes, filename, subsidiary)
+
+        print(f"✅ AI comprehensive revenue analysis completed")
+        return JSONResponse(content=analysis_result)
+
+    except Exception as e:
+        print(f"❌ AI comprehensive revenue analysis failed: {str(e)}")
+        return JSONResponse(status_code=500, content={"error": str(e)})

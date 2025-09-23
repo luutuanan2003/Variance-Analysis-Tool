@@ -709,6 +709,127 @@ class LLMFinancialAnalyzer:
         print(f"   ✅ Chunked analysis complete: {len(all_anomalies)} total anomalies")
         return all_anomalies
 
+    def analyze_comprehensive_revenue_impact(
+        self,
+        excel_bytes: bytes,
+        filename: str,
+        subsidiary: str,
+        config: dict
+    ) -> List[Dict[str, Any]]:
+        """
+        Dedicated comprehensive revenue impact analysis focusing on 511/641/642 accounts.
+        Mirrors the functionality of analyze_comprehensive_revenue_impact_from_bytes in core.py.
+        """
+        print(f"\n🎯 ===== COMPREHENSIVE REVENUE IMPACT ANALYSIS =====")
+        print(f"📁 File: {filename}")
+        print(f"🏢 Subsidiary: {subsidiary}")
+        print(f"🤖 AI Model: {self.openai_model}")
+
+        try:
+            # Step 1: Load and prepare Excel data
+            print(f"\n📊 STEP 1: Excel Data Loading & Preparation")
+            print(f"   🔄 Loading Excel file from bytes...")
+
+            bs_raw, pl_raw = self._load_excel_sheets(excel_bytes)
+            bs_clean, pl_clean = self._clean_data_for_ai(bs_raw, pl_raw, subsidiary)
+
+            # Step 2: Convert to CSV for AI analysis
+            print(f"\n📝 STEP 2: CSV Conversion for AI Processing")
+            bs_csv = bs_clean.to_csv(index=False, header=True, quoting=1, float_format='%.0f')
+            pl_csv = pl_clean.to_csv(index=False, header=True, quoting=1, float_format='%.0f')
+
+            print(f"   ✅ CSV conversion complete:")
+            print(f"      • BS CSV: {len(bs_csv):,} characters")
+            print(f"      • PL CSV: {len(pl_csv):,} characters")
+
+            # Step 3: Create specialized revenue analysis prompt
+            print(f"\n📝 STEP 3: Creating Comprehensive Revenue Analysis Prompt")
+            prompt = self._create_revenue_analysis_prompt(bs_csv, pl_csv, subsidiary, filename, config)
+            prompt_length = len(prompt)
+            print(f"   ✅ Prompt generation complete:")
+            print(f"      • Total prompt length: {prompt_length:,} characters")
+
+            # Step 4: AI Model Processing
+            print(f"\n🤖 STEP 4: AI Revenue Analysis Processing")
+            try:
+                print(f"   🚀 Sending comprehensive revenue analysis request to AI...")
+
+                response = self._call_openai(
+                    system_prompt=self._get_revenue_analysis_system_prompt(),
+                    user_prompt=prompt
+                )
+
+                # Extract token usage information
+                if response and 'total_tokens' in response:
+                    input_tokens = response.get('total_tokens', 0)
+                    output_tokens = response.get('eval_count', 0)
+                    total_tokens = response.get('total_tokens', 0)
+                    print(f"   📊 Token Usage:")
+                    print(f"      • Input tokens: {input_tokens:,}")
+                    print(f"      • Output tokens: {output_tokens:,}")
+                    print(f"      • Total tokens: {total_tokens:,}")
+
+                print(f"   ✅ AI revenue analysis successful")
+
+            except Exception as e:
+                print(f"   ❌ AI revenue analysis failed: {str(e)}")
+                return [{
+                    "subsidiary": subsidiary,
+                    "analysis_type": "system_error",
+                    "account": "SYSTEM_ERROR",
+                    "description": f"Comprehensive revenue analysis failed: {str(e)[:100]}...",
+                    "explanation": f"Error processing comprehensive revenue analysis: {str(e)}",
+                    "current_value": 0,
+                    "previous_value": 0,
+                    "change_amount": 0,
+                    "change_percent": 0,
+                    "severity": "High"
+                }]
+
+            # Step 5: Process AI Response
+            print(f"\n📄 STEP 5: Processing AI Revenue Analysis Response")
+
+            if not response or 'message' not in response or not response['message'] or 'content' not in response['message']:
+                print(f"   ❌ Invalid response structure from OpenAI")
+                raise RuntimeError("Empty response payload from OpenAI")
+
+            result = response['message']['content'] or ""
+            response_length = len(result)
+
+            print(f"   ✅ Response received successfully:")
+            print(f"      • Response length: {response_length:,} characters")
+
+            # Debug: Print the full AI response
+            print(f"\n📄 ===== FULL AI REVENUE ANALYSIS RESPONSE =====")
+            print(result)
+            print(f"===== END AI RESPONSE =====\n")
+
+            # Parse the comprehensive revenue analysis response
+            revenue_analysis = self._parse_revenue_analysis_response(result, subsidiary)
+
+            print(f"   ✅ Parsing completed successfully:")
+            print(f"      • Analysis items generated: {len(revenue_analysis)}")
+
+            print(f"\n🎉 ===== COMPREHENSIVE REVENUE ANALYSIS COMPLETE =====")
+            print(f"📊 Final Results: {len(revenue_analysis)} analysis items")
+
+            return revenue_analysis
+
+        except Exception as e:
+            print(f"\n❌ Comprehensive revenue analysis failed: {str(e)}")
+            return [{
+                "subsidiary": subsidiary,
+                "analysis_type": "system_error",
+                "account": "SYSTEM_ERROR",
+                "description": f"Comprehensive revenue analysis failed: {str(e)[:100]}...",
+                "explanation": f"System error during comprehensive revenue analysis: {str(e)}",
+                "current_value": 0,
+                "previous_value": 0,
+                "change_amount": 0,
+                "change_percent": 0,
+                "severity": "High"
+            }]
+
     # ===========================
     # Data preparation (more permissive)
     # ===========================
@@ -830,54 +951,97 @@ class LLMFinancialAnalyzer:
     # Prompts for Raw Excel Analysis
     # ===========================
     def _get_raw_excel_system_prompt(self) -> str:
-        """Enhanced system prompt for analyzing raw Excel data."""
-        return """You are a senior financial auditor with 15+ years experience in Vietnamese enterprises. You will analyze COMPLETE RAW EXCEL DATA from BS Breakdown and PL Breakdown sheets.
+        """Enhanced system prompt for comprehensive revenue impact analysis matching core.py functionality."""
+        return """You are a senior financial auditor with 15+ years experience in Vietnamese enterprises. You will perform COMPREHENSIVE REVENUE IMPACT ANALYSIS matching the detailed methodology used in our core analysis system.
 
-🎯 ANALYSIS APPROACH:
-You will receive the complete raw Excel sheets exactly as they appear in the file, including:
-- All headers, section dividers, and formatting
-- Account codes in various formats:
-  * Simple codes: (111), (112), (120), (121) - Balance Sheet accounts
-  * Long codes: 511000000, 627000000, 641000000 - P&L accounts
-  * Numbered items: "1. Tien (111)", "2. Cac khoan tuong duong tien (112)"
-- Account names in Vietnamese and English
-- All monthly data columns with actual financial values
-- Section headers like "TAI SAN NGAN HAN (100)", "NGUON VON"
-- Empty rows and structural elements
+🎯 COMPREHENSIVE ANALYSIS APPROACH:
+You will analyze COMPLETE RAW EXCEL DATA to provide the same depth of analysis as our core.py implementation, including:
 
-🔍 FOCUS AREAS (Vietnamese Chart of Accounts):
-1. REVENUE (511*): All revenue accounts - analyze patterns, seasonality, unusual changes
-2. UTILITIES (627*, 641*): Operational expenses - check efficiency vs business activity
-3. INTEREST (515*, 635*): Financial income/expenses - examine debt structure changes
-4. OTHER MATERIAL ACCOUNTS: Any accounts with significant balances or changes
+🔍 PRIMARY FOCUS AREAS (Vietnamese Chart of Accounts):
+1. REVENUE ANALYSIS (511*): Complete revenue account breakdown with entity-level impact analysis
+2. SG&A EXPENSE ANALYSIS (641*): Detailed 641* account analysis with entity-level variance tracking
+3. SG&A EXPENSE ANALYSIS (642*): Detailed 642* account analysis with entity-level variance tracking
+4. COMBINED SG&A ANALYSIS: Calculate SG&A ratios as percentage of revenue with trend analysis
+5. GROSS MARGIN ANALYSIS: (Revenue - Cost)/Revenue analysis with risk identification
+6. UTILITY ANALYSIS: Revenue vs cost pairing for utility accounts
+7. RISK ASSESSMENT: Identify significant changes and flag concerning trends
 
-📊 ANALYSIS INSTRUCTIONS:
+📊 DETAILED ANALYSIS REQUIREMENTS:
+
+1. TOTAL REVENUE ANALYSIS (511*):
+   - Calculate total 511* revenue by month across all entities
+   - Identify month-over-month changes with VND amounts and percentages
+   - Flag significant variance periods (>1M VND changes)
+
+2. REVENUE BY ACCOUNT TYPE (511.xxx):
+   - Break down each 511* revenue account separately
+   - For each account: track monthly totals and identify biggest changes
+   - For accounts with changes >1M VND: analyze which entities/customers drive the changes
+   - Provide top 5 entity impacts with VND amounts and percentages
+
+3. SG&A 641* ANALYSIS:
+   - Identify all 641* accounts and track monthly totals
+   - Calculate month-over-month changes for each 641* account
+   - For accounts with changes >500K VND: analyze entity-level impacts
+   - Provide top 5 entity impacts showing expense variance drivers
+
+4. SG&A 642* ANALYSIS:
+   - Identify all 642* accounts and track monthly totals
+   - Calculate month-over-month changes for each 642* account
+   - For accounts with changes >500K VND: analyze entity-level impacts
+   - Provide top 5 entity impacts showing expense variance drivers
+
+5. COMBINED SG&A RATIO ANALYSIS:
+   - Calculate total SG&A (641* + 642*) by month
+   - Calculate SG&A as percentage of revenue for each month
+   - Track month-over-month changes in SG&A ratio
+   - Flag ratio changes >2% as medium risk, >3% as high risk
+
+6. GROSS MARGIN ANALYSIS:
+   - Calculate gross margin: (Revenue - COGS)/Revenue by month
+   - Track margin percentage changes month-over-month
+   - Flag margin changes >1% as concerning trends
+
+7. ENTITY-LEVEL IMPACT ANALYSIS:
+   - For significant account changes: identify which entities/customers drive the variance
+   - Show entity name, change amount, percentage change, previous/current values
+   - Focus on entities with changes >100K VND for revenue, >50K VND for SG&A
+
+📊 DATA EXTRACTION INSTRUCTIONS:
 1. ACCOUNT DETECTION: Automatically identify account codes and names:
-   - BS accounts: Look for patterns like "(111)", "(112)", "1. Tien (111)", "2. Cac khoan..."
-   - PL accounts: Look for patterns like "511000000", "627000000", "Revenue from sale"
-   - Extract the numeric codes (111, 112, 511000000, etc.) and descriptive names
-   - Match account codes with their corresponding financial values
+   - Revenue accounts: Look for 511* patterns in account codes and names
+   - SG&A 641* accounts: Look for 641* patterns in account codes and names
+   - SG&A 642* accounts: Look for 642* patterns in account codes and names
+   - COGS accounts: Look for 632* patterns for gross margin calculation
+   - Extract the numeric codes and descriptive names
+   - Match account codes with their corresponding financial values across months
 
-2. PERIOD IDENTIFICATION: Find the actual period names from column headers:
-   - Extract EXACT period names from the CSV column headers (first row)
-   - Use the ACTUAL period names like "As of Jan 2025", "Dec 2024", "Nov 2024", etc.
-   - Do NOT use generic terms like "current" or "previous" - use the real period names
-   - Focus on the rightmost 2-3 columns with actual financial data
+2. ENTITY/CUSTOMER IDENTIFICATION: Find entity-level data:
+   - Look for "Entity" columns or customer/subsidiary names
+   - Track values by entity for each account across months
+   - Identify which entities drive account-level changes
+   - Focus on entities with significant value changes
 
-3. VALUE EXTRACTION: Extract actual financial amounts for each account:
-   - Look for large numbers (typically 8+ digits for VND amounts)
+3. PERIOD IDENTIFICATION: Find all available month columns:
+   - Extract ALL month column headers (Jan, Feb, Mar, Apr, May, Jun, Jul, Aug)
+   - Use actual period names from the Excel headers
+   - Track up to 8 months of data for trend analysis
+   - Calculate month-over-month changes across the full timeline
+
+4. VALUE EXTRACTION: Extract actual financial amounts:
+   - Look for large numbers (typically 6+ digits for VND amounts)
    - Handle different formats: 2,249,885,190.00, 46,000,000,000.00, etc.
-   - Ignore zero or empty values unless they represent significant changes
+   - Track values by account, by entity, by month
+   - Sum totals across entities for account-level analysis
 
-4. CHANGE CALCULATION: Calculate meaningful changes between periods:
-   - Absolute changes: Current - Previous (in VND)
-   - Percentage changes: (Current - Previous) / |Previous| * 100
-   - Focus on accounts with material balances (>100M VND) or significant changes (>15%)
-
-5. PATTERN RECOGNITION: Identify unusual movements and anomalies:
-   - Sudden increases/decreases without business justification
-   - Seasonal patterns that don't match expectations
-   - Related account movements that don't correlate properly
+5. COMPREHENSIVE CALCULATIONS:
+   - Total revenue (511*) by month across all entities
+   - Total SG&A 641* by month across all entities
+   - Total SG&A 642* by month across all entities
+   - Combined SG&A (641* + 642*) by month
+   - SG&A ratio: Total SG&A / Total Revenue * 100
+   - Gross margin: (Revenue - COGS) / Revenue * 100
+   - Month-over-month changes for all metrics
 
 💰 MATERIALITY THRESHOLDS:
 - Revenue-based: 2% of total revenue or 50M VND (whichever is lower)
@@ -889,32 +1053,87 @@ You will receive the complete raw Excel sheets exactly as they appear in the fil
 1. You MUST respond with ONLY valid JSON array format
 2. Start with [ and end with ]
 3. No markdown, no ```json blocks, no additional text
-4. Each anomaly must include actual account values from the Excel data
-5. YOU MUST FIND ANOMALIES - analyze every account with numerical data
-6. Look for: month-over-month changes, unusual balances, percentage variations >5%
-7. MANDATORY: Identify patterns in Revenue (511*), Utilities (627*/641*), Cash (111*), any significant changes
-8. Only return empty array [] if literally no numerical financial data exists in the sheets
+4. Provide COMPREHENSIVE ANALYSIS covering all 7 focus areas
+5. Include both account-level and entity-level insights
+6. Calculate ratios, trends, and risk assessments
+7. Use actual values from the Excel data
+8. Focus on 511*, 641*, 642* accounts with entity-level detail
 
-📋 REQUIRED JSON FORMAT WITH REAL EXAMPLES:
+📋 REQUIRED COMPREHENSIVE JSON FORMAT:
 [{
-  "account": "111-Tien",
-  "description": "Cash balance increased significantly without clear source",
-  "explanation": "Cash (111) increased from 2.2B to 2.6B VND, requiring verification of large deposits and transfers. Investigate source of 400M VND cash inflow.",
-  "current_value": 2600000000,
-  "previous_value": 2200000000,
-  "change_amount": 400000000,
-  "change_percent": 18.2,
-  "severity": "Medium"
+  "analysis_type": "total_revenue_trend",
+  "account": "511*-Total Revenue",
+  "description": "Total revenue analysis across all 511* accounts",
+  "explanation": "Total 511* revenue changed from [previous total] to [current total] VND. Key drivers: [list main revenue accounts]. Month-over-month trend shows [pattern].",
+  "current_value": 0,
+  "previous_value": 0,
+  "change_amount": 0,
+  "change_percent": 0,
+  "severity": "Medium",
+  "details": {
+    "monthly_totals": {"Jan": 0, "Feb": 0, "Mar": 0},
+    "biggest_changes": [{"period": "Feb→Mar", "change": 0, "pct_change": 0}]
+  }
 },
 {
-  "account": "511000000-Revenue from sale and service provision",
-  "description": "Revenue pattern shows unusual monthly variation",
-  "explanation": "Service revenue fluctuated from 26.2M to 28.1M VND without seasonal justification. Review customer contracts and delivery schedules.",
-  "current_value": 28100000,
-  "previous_value": 26200000,
-  "change_amount": 1900000,
-  "change_percent": 7.3,
-  "severity": "Low"
+  "analysis_type": "revenue_by_account",
+  "account": "511xxx-Specific Revenue Account",
+  "description": "Individual revenue account analysis with entity breakdown",
+  "explanation": "Account [name] showed [change description]. Top entity impacts: [entity name] contributed [amount] VND change.",
+  "current_value": 0,
+  "previous_value": 0,
+  "change_amount": 0,
+  "change_percent": 0,
+  "severity": "Low",
+  "details": {
+    "monthly_totals": {"Jan": 0, "Feb": 0},
+    "entity_impacts": [{"entity": "Entity Name", "change": 0, "pct_change": 0, "prev_val": 0, "curr_val": 0}]
+  }
+},
+{
+  "analysis_type": "sga_641_analysis",
+  "account": "641xxx-SG&A Account",
+  "description": "SG&A 641* account analysis with entity-level variance tracking",
+  "explanation": "SG&A account [name] changed by [amount] VND. Entity breakdown shows [top contributors].",
+  "current_value": 0,
+  "previous_value": 0,
+  "change_amount": 0,
+  "change_percent": 0,
+  "severity": "Medium",
+  "details": {
+    "monthly_totals": {"Jan": 0, "Feb": 0},
+    "entity_impacts": [{"entity": "Entity Name", "change": 0, "pct_change": 0, "prev_val": 0, "curr_val": 0}]
+  }
+},
+{
+  "analysis_type": "sga_642_analysis",
+  "account": "642xxx-SG&A Account",
+  "description": "SG&A 642* account analysis with entity-level variance tracking",
+  "explanation": "SG&A account [name] changed by [amount] VND. Entity breakdown shows [top contributors].",
+  "current_value": 0,
+  "previous_value": 0,
+  "change_amount": 0,
+  "change_percent": 0,
+  "severity": "Medium",
+  "details": {
+    "monthly_totals": {"Jan": 0, "Feb": 0},
+    "entity_impacts": [{"entity": "Entity Name", "change": 0, "pct_change": 0, "prev_val": 0, "curr_val": 0}]
+  }
+},
+{
+  "analysis_type": "combined_sga_ratio",
+  "account": "641*+642*-Combined SG&A",
+  "description": "Combined SG&A ratio analysis as percentage of revenue",
+  "explanation": "Total SG&A (641*+642*) represents [ratio]% of revenue, changing by [change] percentage points from previous period. Risk level: [assessment].",
+  "current_value": 0,
+  "previous_value": 0,
+  "change_amount": 0,
+  "change_percent": 0,
+  "severity": "High",
+  "details": {
+    "sga_ratio_trend": [{"month": "Jan", "revenue": 0, "total_sga": 0, "ratio_pct": 0}],
+    "ratio_changes": [{"period": "Feb→Mar", "ratio_change": 0}]
+  }
 }]
 
 🎯 ACCOUNT CODE EXTRACTION EXAMPLES:
@@ -1359,5 +1578,155 @@ Contains Analysis: {'Yes' if has_insights else 'No'}
             "change_percent": 0,
             "severity": "High",
             "sheet_type": "Error"
+        }]
+
+    # ===========================
+    # Dedicated Revenue Analysis Methods
+    # ===========================
+    def _get_revenue_analysis_system_prompt(self) -> str:
+        """Dedicated system prompt for comprehensive revenue impact analysis."""
+        return """You are a senior financial auditor specializing in comprehensive revenue impact analysis for Vietnamese enterprises. You will perform detailed analysis matching the methodology of our core analysis system.
+
+🎯 REVENUE IMPACT ANALYSIS METHODOLOGY:
+You must provide a complete analysis covering these specific areas:
+
+1. TOTAL REVENUE TREND ANALYSIS (511*):
+   - Calculate total 511* revenue by month across all entities
+   - Identify month-over-month changes and patterns
+   - Flag significant variance periods and explain business drivers
+
+2. REVENUE BY ACCOUNT BREAKDOWN (511.xxx):
+   - Analyze each individual 511* revenue account separately
+   - Track monthly performance and identify biggest changes
+   - For accounts with material changes: drill down to entity-level impacts
+
+3. SG&A 641* EXPENSE ANALYSIS:
+   - Identify and analyze all 641* accounts individually
+   - Calculate monthly totals and variance trends
+   - For significant changes: identify entity-level drivers
+
+4. SG&A 642* EXPENSE ANALYSIS:
+   - Identify and analyze all 642* accounts individually
+   - Calculate monthly totals and variance trends
+   - For significant changes: identify entity-level drivers
+
+5. COMBINED SG&A RATIO ANALYSIS:
+   - Calculate total SG&A (641* + 642*) as percentage of revenue
+   - Track ratio changes month-over-month
+   - Assess ratio trends and flag concerning patterns
+
+6. ENTITY-LEVEL IMPACT ANALYSIS:
+   - For each significant account change: identify driving entities/customers
+   - Show entity contribution to variance with VND amounts and percentages
+   - Focus on material entity impacts (>100K VND revenue, >50K VND SG&A)
+
+📊 DATA PROCESSING REQUIREMENTS:
+- Extract ALL month columns (up to 8 months of data)
+- Identify entity/customer columns for detailed breakdowns
+- Calculate accurate totals, subtotals, and ratios
+- Track month-over-month changes across the timeline
+- Use actual VND amounts from the Excel data
+
+⚡ CRITICAL OUTPUT REQUIREMENTS:
+1. Return ONLY valid JSON array format (no markdown, no code blocks)
+2. Include analysis_type field for each item to categorize findings
+3. Provide both summary-level and detailed analysis items
+4. Include actual financial amounts and percentage changes
+5. Add entity-level details in the details object for drill-down capability
+6. Cover ALL major analysis areas (don't skip any of the 6 areas above)
+
+ANALYZE COMPREHENSIVELY AND RETURN DETAILED REVENUE IMPACT INSIGHTS."""
+
+    def _create_revenue_analysis_prompt(self, bs_csv: str, pl_csv: str, subsidiary: str, filename: str, config: dict) -> str:
+        """Create specialized prompt for comprehensive revenue impact analysis."""
+        _ = config  # AI determines all parameters autonomously
+
+        return f"""
+COMPREHENSIVE REVENUE IMPACT ANALYSIS REQUEST
+
+Company: {subsidiary}
+File: {filename}
+Analysis Type: Detailed Revenue & SG&A Impact Analysis (511*/641*/642*)
+
+INSTRUCTIONS:
+Perform comprehensive revenue impact analysis covering:
+1. Total revenue trend analysis (511* accounts)
+2. Individual revenue account breakdowns with entity impacts
+3. SG&A 641* account analysis with entity-level variances
+4. SG&A 642* account analysis with entity-level variances
+5. Combined SG&A ratio analysis (% of revenue)
+6. Entity-level impact identification for all material changes
+
+Focus on accounts 511*, 641*, 642* and their entity-level details.
+Calculate monthly totals, trends, and ratios.
+Identify entities/customers driving significant variances.
+
+=== RAW BALANCE SHEET DATA (BS Breakdown Sheet) ===
+{bs_csv}
+
+=== RAW P&L DATA (PL Breakdown Sheet) ===
+{pl_csv}
+
+Return comprehensive JSON analysis covering all 6 analysis areas with entity-level detail."""
+
+    def _parse_revenue_analysis_response(self, response: str, subsidiary: str) -> List[Dict[str, Any]]:
+        """Parse the AI response for comprehensive revenue impact analysis."""
+        try:
+            # Clean the response and parse JSON
+            cleaned_response = response.strip()
+            if cleaned_response.startswith('```json'):
+                cleaned_response = cleaned_response[7:]
+            if cleaned_response.endswith('```'):
+                cleaned_response = cleaned_response[:-3]
+            cleaned_response = cleaned_response.strip()
+
+            # Parse JSON array
+            import json
+            analysis_items = json.loads(cleaned_response)
+
+            # Validate and enhance each item
+            enhanced_items = []
+            for item in analysis_items:
+                if isinstance(item, dict):
+                    # Ensure required fields exist
+                    enhanced_item = {
+                        "subsidiary": subsidiary,
+                        "analysis_type": item.get("analysis_type", "general"),
+                        "account": item.get("account", "Unknown"),
+                        "description": item.get("description", ""),
+                        "explanation": item.get("explanation", ""),
+                        "current_value": float(item.get("current_value", 0)) if item.get("current_value") else 0,
+                        "previous_value": float(item.get("previous_value", 0)) if item.get("previous_value") else 0,
+                        "change_amount": float(item.get("change_amount", 0)) if item.get("change_amount") else 0,
+                        "change_percent": float(item.get("change_percent", 0)) if item.get("change_percent") else 0,
+                        "severity": item.get("severity", "Medium"),
+                        "details": item.get("details", {})
+                    }
+                    enhanced_items.append(enhanced_item)
+
+            return enhanced_items if enhanced_items else self._create_fallback_revenue_analysis(subsidiary)
+
+        except (json.JSONDecodeError, KeyError, ValueError) as e:
+            print(f"   ❌ JSON parsing failed: {str(e)}")
+            print(f"   🔍 Response sample: {response[:500]}...")
+            return self._create_fallback_revenue_analysis(subsidiary)
+
+    def _create_fallback_revenue_analysis(self, subsidiary: str) -> List[Dict[str, Any]]:
+        """Create fallback analysis when AI response cannot be parsed."""
+        return [{
+            "subsidiary": subsidiary,
+            "analysis_type": "parsing_error",
+            "account": "PARSING_ERROR",
+            "description": "AI response could not be parsed into comprehensive revenue analysis",
+            "explanation": "The AI analysis completed but the response format could not be processed. This may indicate formatting issues in the AI output or complex data that requires manual review.",
+            "current_value": 0,
+            "previous_value": 0,
+            "change_amount": 0,
+            "change_percent": 0,
+            "severity": "Medium",
+            "details": {
+                "error_type": "response_parsing",
+                "suggestion": "Review raw AI output or reprocess with adjusted parameters"
+            }
         }]
 
