@@ -459,48 +459,6 @@ document.addEventListener("DOMContentLoaded", () => {
   console.log("🔧 DOM loaded, setting up revenue analysis...");
   enhancePythonAnalysisWithRevenueAnalysis();
 
-  // Set up debug button
-  const testBtn = document.getElementById("testRevenueBtn");
-  const debugInfo = document.getElementById("debugInfo");
-
-  if (testBtn && debugInfo) {
-    console.log("🔧 Setting up debug button...");
-
-    testBtn.addEventListener("click", () => {
-      console.log("🔧 Debug button clicked!");
-      debugInfo.innerHTML = "Debug started...<br>";
-
-      // Check if functions exist
-      debugInfo.innerHTML += `runComprehensiveRevenueAnalysis exists: ${typeof runComprehensiveRevenueAnalysis}<br>`;
-      debugInfo.innerHTML += `displayComprehensiveRevenueAnalysis exists: ${typeof displayComprehensiveRevenueAnalysis}<br>`;
-      debugInfo.innerHTML += `initializePythonAnalysis exists: ${typeof window.initializePythonAnalysis}<br>`;
-
-      // Check DOM elements
-      const resultsSection = document.getElementById("revenueResults");
-      const contentDiv = document.getElementById("revenueContent");
-      debugInfo.innerHTML += `revenueResults element: ${!!resultsSection}<br>`;
-      debugInfo.innerHTML += `revenueContent element: ${!!contentDiv}<br>`;
-
-      // Test display with dummy data
-      const testData = {
-        summary: { total_accounts: 5, total_revenue_latest: 1000000000 },
-        subsidiary: "Test Company"
-      };
-
-      try {
-        debugInfo.innerHTML += "Testing displayComprehensiveRevenueAnalysis...<br>";
-        displayComprehensiveRevenueAnalysis(testData);
-
-        if (resultsSection) {
-          resultsSection.style.display = "block";
-          debugInfo.innerHTML += "✅ Revenue results section made visible<br>";
-        }
-      } catch (e) {
-        debugInfo.innerHTML += `❌ Error: ${e.message}<br>`;
-      }
-    });
-  }
-
   // Also try to call it after a delay in case the original scripts load later
   setTimeout(() => {
     console.log("🔧 Delayed setup of revenue analysis...");
