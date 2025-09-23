@@ -116,67 +116,64 @@ class LLMFinancialAnalyzer:
             raise e
 
     def _init_openai_aggressive(self):
-        """Simplified aggressive OpenAI initialization for problematic cloud environments."""
-        print("   → Attempting aggressive initialization with module isolation")
-
-        # Clear ALL possible proxy and network-related environment variables
-        network_vars = [
-            'HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy',
-            'ALL_PROXY', 'all_proxy', 'NO_PROXY', 'no_proxy'
-        ]
-        original_values = {}
-        for var in network_vars:
-            if var in os.environ:
-                original_values[var] = os.environ[var]
-                del os.environ[var]
-                print(f"   → Cleared {var}")
+        """Direct API approach bypassing OpenAI client initialization entirely."""
+        print("   → Attempting direct API approach bypassing OpenAI client")
 
         try:
-            # Create a new isolated process to initialize OpenAI
-            import subprocess
-            import json
+            # Create a minimal client-like object that directly handles API calls
+            class DirectOpenAIClient:
+                def __init__(self, api_key):
+                    self.api_key = api_key
+                    self.base_url = "https://api.openai.com/v1"
 
-            # Create a simple script to initialize OpenAI client
-            test_script = f'''
-import os
-import json
-from openai import OpenAI
+                def chat_completions_create(self, **kwargs):
+                    import httpx
 
-try:
-    client = OpenAI(api_key="{self.openai_api_key}")
-    print(json.dumps({{"success": True, "message": "OpenAI client created successfully"}}))
-except Exception as e:
-    print(json.dumps({{"success": False, "error": str(e)}}))
-'''
+                    # Extract parameters
+                    model = kwargs.get('model', 'gpt-4o')
+                    messages = kwargs.get('messages', [])
+                    temperature = kwargs.get('temperature', 0.1)
+                    max_tokens = kwargs.get('max_tokens', 4000)
 
-            # Run in isolated subprocess
-            result = subprocess.run([sys.executable, '-c', test_script],
-                                  capture_output=True, text=True, timeout=30)
+                    headers = {
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json",
+                    }
 
-            if result.returncode == 0:
-                try:
-                    output = json.loads(result.stdout.strip())
-                    if output.get('success'):
-                        # If subprocess succeeded, try here too with cleared environment
-                        from openai import OpenAI
-                        client = OpenAI(api_key=self.openai_api_key)
-                        print("   → Successfully created OpenAI client after environment isolation")
+                    data = {
+                        "model": model,
+                        "messages": messages,
+                        "temperature": temperature,
+                        "max_tokens": max_tokens
+                    }
 
-                        # Restore environment variables
-                        for var, value in original_values.items():
-                            os.environ[var] = value
+                    # Make direct HTTP request to OpenAI API
+                    with httpx.Client(timeout=60.0) as http_client:
+                        response = http_client.post(
+                            f"{self.base_url}/chat/completions",
+                            headers=headers,
+                            json=data
+                        )
+                        response.raise_for_status()
+                        return response.json()
 
-                        return client
-                except Exception:
-                    pass
+                @property
+                def chat(self):
+                    return self
 
-            raise RuntimeError("Subprocess initialization test failed")
+                @property
+                def completions(self):
+                    return self
+
+                def create(self, **kwargs):
+                    return self.chat_completions_create(**kwargs)
+
+            client = DirectOpenAIClient(self.openai_api_key)
+            print("   → Successfully created direct API client bypassing OpenAI library")
+            return client
 
         except Exception as e:
-            print(f"   → Aggressive initialization failed: {e}")
-            # Restore environment variables
-            for var, value in original_values.items():
-                os.environ[var] = value
+            print(f"   → Direct API approach failed: {e}")
             raise e
 
     # ===========================
@@ -203,35 +200,55 @@ except Exception as e:
             print(f"   ✅ OpenAI API call completed")
             print(f"      • Response type: {type(response)}")
 
-            # Validate response structure
-            if not response:
-                raise RuntimeError("OpenAI API returned empty response")
+            # Handle both standard OpenAI response and direct API response
+            if isinstance(response, dict):
+                # Direct API response (JSON dict)
+                print(f"      • Processing direct API response")
+                if 'choices' not in response or not response['choices']:
+                    raise RuntimeError("Direct API returned no choices")
 
-            print(f"      • Has choices: {hasattr(response, 'choices')}")
-            if not response.choices or len(response.choices) == 0:
-                raise RuntimeError("OpenAI API returned no choices")
+                content = response['choices'][0]['message']['content']
+                usage = response.get('usage', {})
 
-            print(f"      • Choices count: {len(response.choices)}")
-            if not response.choices[0].message:
-                raise RuntimeError("OpenAI API returned no message")
+                return {
+                    "message": {
+                        "content": content
+                    },
+                    "prompt_eval_count": usage.get('prompt_tokens', 0),
+                    "eval_count": usage.get('completion_tokens', 0),
+                    "total_tokens": usage.get('total_tokens', 0)
+                }
+            else:
+                # Standard OpenAI client response
+                print(f"      • Processing standard OpenAI response")
+                if not response:
+                    raise RuntimeError("OpenAI API returned empty response")
 
-            print(f"      • Has message: {hasattr(response.choices[0], 'message')}")
-            content = response.choices[0].message.content
-            print(f"      • Content type: {type(content)}")
-            print(f"      • Content length: {len(content) if content else 0}")
+                print(f"      • Has choices: {hasattr(response, 'choices')}")
+                if not response.choices or len(response.choices) == 0:
+                    raise RuntimeError("OpenAI API returned no choices")
 
-            if content is None:
-                raise RuntimeError("OpenAI API returned None content")
+                print(f"      • Choices count: {len(response.choices)}")
+                if not response.choices[0].message:
+                    raise RuntimeError("OpenAI API returned no message")
 
-            # Return in consistent format
-            return {
-                "message": {
-                    "content": content
-                },
-                "prompt_eval_count": response.usage.prompt_tokens if response.usage else 0,
-                "eval_count": response.usage.completion_tokens if response.usage else 0,
-                "total_tokens": response.usage.total_tokens if response.usage else 0
-            }
+                print(f"      • Has message: {hasattr(response.choices[0], 'message')}")
+                content = response.choices[0].message.content
+                print(f"      • Content type: {type(content)}")
+                print(f"      • Content length: {len(content) if content else 0}")
+
+                if content is None:
+                    raise RuntimeError("OpenAI API returned None content")
+
+                # Return in consistent format
+                return {
+                    "message": {
+                        "content": content
+                    },
+                    "prompt_eval_count": response.usage.prompt_tokens if response.usage else 0,
+                    "eval_count": response.usage.completion_tokens if response.usage else 0,
+                    "total_tokens": response.usage.total_tokens if response.usage else 0
+                }
         except Exception as e:
             print(f"   ❌ OpenAI API call failed: {str(e)}")
             print(f"      • Error type: {type(e)}")
