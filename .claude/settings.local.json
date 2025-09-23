@@ -4,7 +4,9 @@
       "Bash(curl:*)",
       "Bash(pkill:*)",
       "Bash(uvicorn:*)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(node:*)",
+      "Bash(open http://localhost:8000)"
     ],
     "deny": [],
     "ask": []

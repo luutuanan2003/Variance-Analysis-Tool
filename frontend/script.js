@@ -111,6 +111,22 @@ function displayComprehensiveRevenueAnalysis(data) {
             <label>Latest Gross Margin:</label>
             <span>${data.summary.gross_margin_latest ? data.summary.gross_margin_latest.toFixed(1) + '%' : 'N/A'}</span>
           </div>
+          <div class="stat">
+            <label>SG&A 641* Accounts:</label>
+            <span>${data.summary.total_sga_641_accounts || 0}</span>
+          </div>
+          <div class="stat">
+            <label>SG&A 642* Accounts:</label>
+            <span>${data.summary.total_sga_642_accounts || 0}</span>
+          </div>
+          <div class="stat">
+            <label>Latest Total SG&A:</label>
+            <span>${formatVND(data.summary.total_sga_latest || 0)}</span>
+          </div>
+          <div class="stat">
+            <label>Latest SG&A Ratio:</label>
+            <span>${data.summary.sga_ratio_latest ? data.summary.sga_ratio_latest.toFixed(1) + '% of Revenue' : 'N/A'}</span>
+          </div>
         </div>
       </div>
     `;
@@ -303,6 +319,165 @@ function displayComprehensiveRevenueAnalysis(data) {
         </div>
       `;
     }
+  }
+
+  // SG&A 641 Analysis
+  if (data.sga_641_analysis && Object.keys(data.sga_641_analysis).length > 0) {
+    html += `
+      <div class="analysis-section">
+        <h4>📊 SG&A Analysis (641* Accounts)</h4>
+    `;
+
+    Object.entries(data.sga_641_analysis).forEach(([accountName, accountData]) => {
+      if (accountData.biggest_change && Math.abs(accountData.biggest_change.change) > 500000) {
+        html += `
+          <div class="account-analysis">
+            <h5>${accountName}</h5>
+            <div class="biggest-change">
+              <strong>Biggest Change:</strong> ${accountData.biggest_change.from} → ${accountData.biggest_change.to}
+              <br>
+              <span class="${accountData.biggest_change.change >= 0 ? 'positive' : 'negative'}">
+                ${accountData.biggest_change.change >= 0 ? '+' : ''}${formatVND(accountData.biggest_change.change)}
+                (${accountData.biggest_change.pct_change >= 0 ? '+' : ''}${accountData.biggest_change.pct_change.toFixed(1)}%)
+              </span>
+            </div>
+        `;
+
+        if (accountData.entity_impacts && accountData.entity_impacts.length > 0) {
+          html += `
+            <div class="customer-impacts">
+              <strong>Top Entity Impacts:</strong>
+              <ul>
+          `;
+
+          accountData.entity_impacts.forEach(impact => {
+            const impactClass = impact.change >= 0 ? 'positive' : 'negative';
+            html += `
+              <li class="${impactClass}">
+                <strong>${impact.entity}:</strong>
+                ${impact.change >= 0 ? '+' : ''}${formatVND(impact.change)}
+                (${impact.pct_change >= 0 ? '+' : ''}${impact.pct_change.toFixed(1)}%)
+                <br>
+                <small>${formatVND(impact.prev_val)} → ${formatVND(impact.curr_val)}</small>
+              </li>
+            `;
+          });
+
+          html += `
+              </ul>
+            </div>
+          `;
+        }
+
+        html += `</div>`;
+      }
+    });
+
+    html += `</div>`;
+  }
+
+  // SG&A 642 Analysis
+  if (data.sga_642_analysis && Object.keys(data.sga_642_analysis).length > 0) {
+    html += `
+      <div class="analysis-section">
+        <h4>📊 SG&A Analysis (642* Accounts)</h4>
+    `;
+
+    Object.entries(data.sga_642_analysis).forEach(([accountName, accountData]) => {
+      if (accountData.biggest_change && Math.abs(accountData.biggest_change.change) > 500000) {
+        html += `
+          <div class="account-analysis">
+            <h5>${accountName}</h5>
+            <div class="biggest-change">
+              <strong>Biggest Change:</strong> ${accountData.biggest_change.from} → ${accountData.biggest_change.to}
+              <br>
+              <span class="${accountData.biggest_change.change >= 0 ? 'positive' : 'negative'}">
+                ${accountData.biggest_change.change >= 0 ? '+' : ''}${formatVND(accountData.biggest_change.change)}
+                (${accountData.biggest_change.pct_change >= 0 ? '+' : ''}${accountData.biggest_change.pct_change.toFixed(1)}%)
+              </span>
+            </div>
+        `;
+
+        if (accountData.entity_impacts && accountData.entity_impacts.length > 0) {
+          html += `
+            <div class="customer-impacts">
+              <strong>Top Entity Impacts:</strong>
+              <ul>
+          `;
+
+          accountData.entity_impacts.forEach(impact => {
+            const impactClass = impact.change >= 0 ? 'positive' : 'negative';
+            html += `
+              <li class="${impactClass}">
+                <strong>${impact.entity}:</strong>
+                ${impact.change >= 0 ? '+' : ''}${formatVND(impact.change)}
+                (${impact.pct_change >= 0 ? '+' : ''}${impact.pct_change.toFixed(1)}%)
+                <br>
+                <small>${formatVND(impact.prev_val)} → ${formatVND(impact.curr_val)}</small>
+              </li>
+            `;
+          });
+
+          html += `
+              </ul>
+            </div>
+          `;
+        }
+
+        html += `</div>`;
+      }
+    });
+
+    html += `</div>`;
+  }
+
+  // Combined SG&A Analysis
+  if (data.combined_sga_analysis && data.combined_sga_analysis.ratio_trend && data.combined_sga_analysis.ratio_trend.length > 0) {
+    html += `
+      <div class="analysis-section">
+        <h4>📈 Combined SG&A Analysis (641* + 642*)</h4>
+        <div class="sga-summary">
+          <div class="stat">
+            <label>641* Accounts:</label>
+            <span>${data.combined_sga_analysis.total_641_accounts || 0}</span>
+          </div>
+          <div class="stat">
+            <label>642* Accounts:</label>
+            <span>${data.combined_sga_analysis.total_642_accounts || 0}</span>
+          </div>
+        </div>
+        <div class="sga-trend">
+    `;
+
+    data.combined_sga_analysis.ratio_trend.forEach((sgaData, index) => {
+      const prevRatio = index > 0 ? data.combined_sga_analysis.ratio_trend[index - 1].sga_ratio_pct : null;
+      let changeIndicator = '';
+      if (prevRatio !== null) {
+        const change = sgaData.sga_ratio_pct - prevRatio;
+        const changeClass = change >= 0 ? 'negative' : 'positive'; // Higher SG&A ratio is typically worse
+        changeIndicator = `<span class="sga-change ${changeClass}">(${change >= 0 ? '+' : ''}${change.toFixed(1)}%)</span>`;
+      }
+
+      html += `
+        <div class="sga-item">
+          <div class="sga-month">${sgaData.month}</div>
+          <div class="sga-values">
+            <div class="sga-ratio">SG&A Ratio: ${sgaData.sga_ratio_pct.toFixed(1)}% of Revenue ${changeIndicator}</div>
+            <div class="sga-breakdown">
+              Revenue: ${formatVND(sgaData.revenue)}<br>
+              641* Total: ${formatVND(sgaData.sga_641_total)}<br>
+              642* Total: ${formatVND(sgaData.sga_642_total)}<br>
+              <strong>Total SG&A: ${formatVND(sgaData.total_sga)}</strong>
+            </div>
+          </div>
+        </div>
+      `;
+    });
+
+    html += `
+        </div>
+      </div>
+    `;
   }
 
   console.log("📝 Generated HTML length:", html.length);

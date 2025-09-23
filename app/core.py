@@ -1219,7 +1219,11 @@ def _add_revenue_analysis_to_sheet(ws, revenue_analysis: dict):
             ["Months Analyzed", len(revenue_analysis.get('months_analyzed', []))],
             ["Revenue Accounts", summary.get('total_accounts', 0)],
             ["Latest Total Revenue", format_vnd(summary.get('total_revenue_latest', 0))],
-            ["Latest Gross Margin %", f"{summary.get('gross_margin_latest', 0):.1f}%" if summary.get('gross_margin_latest') else 'N/A']
+            ["Latest Gross Margin %", f"{summary.get('gross_margin_latest', 0):.1f}%" if summary.get('gross_margin_latest') else 'N/A'],
+            ["SG&A 641* Accounts", summary.get('total_sga_641_accounts', 0)],
+            ["SG&A 642* Accounts", summary.get('total_sga_642_accounts', 0)],
+            ["Latest Total SG&A", format_vnd(summary.get('total_sga_latest', 0))],
+            ["Latest SG&A Ratio %", f"{summary.get('sga_ratio_latest', 0):.1f}%" if summary.get('sga_ratio_latest') else 'N/A']
         ]
 
         for label, value in summary_data:
@@ -1461,6 +1465,204 @@ def _add_revenue_analysis_to_sheet(ws, revenue_analysis: dict):
             row += 1
         row += 1
 
+    # SG&A 641 Analysis
+    if revenue_analysis.get('sga_641_analysis'):
+        ws[f"A{row}"] = "SG&A ANALYSIS - 641* ACCOUNTS"
+        ws[f"A{row}"].font = section_font
+        row += 1
+
+        for account_name, account_data in revenue_analysis['sga_641_analysis'].items():
+            if account_data.get('biggest_change') and abs(account_data['biggest_change'].get('change', 0)) > 500000:
+                ws[f"A{row}"] = f"Account: {account_name}"
+                ws[f"A{row}"].font = Font(bold=True, color="2F5597")
+                row += 1
+
+                biggest_change = account_data['biggest_change']
+                ws[f"A{row}"] = f"Biggest Change: {biggest_change.get('from', '')} → {biggest_change.get('to', '')}"
+                ws[f"B{row}"] = format_vnd(biggest_change.get('change', 0))
+                ws[f"C{row}"] = f"{biggest_change.get('pct_change', 0):+.1f}%"
+
+                # Color code changes
+                change_val = biggest_change.get('change', 0)
+                if change_val > 0:  # Higher SG&A is typically negative
+                    fill_color = PatternFill(start_color="FFEBEE", end_color="FFEBEE", fill_type="solid")
+                elif change_val < 0:  # Lower SG&A is typically positive
+                    fill_color = PatternFill(start_color="E8F5E8", end_color="E8F5E8", fill_type="solid")
+                else:
+                    fill_color = None
+
+                if fill_color:
+                    for col in range(1, 4):
+                        ws.cell(row=row, column=col).fill = fill_color
+                row += 1
+
+                # Top entity impacts
+                if account_data.get('entity_impacts'):
+                    ws[f"A{row}"] = "Top Entity Impacts:"
+                    ws[f"A{row}"].font = Font(bold=True)
+                    row += 1
+
+                    headers = ["Entity", "Change (VND)", "Change (%)", "Previous", "Current"]
+                    for col, header in enumerate(headers, 1):
+                        cell = ws.cell(row=row, column=col, value=header)
+                        cell.font = header_font
+                        cell.fill = header_fill
+                        cell.border = thin_border
+                    row += 1
+
+                    for impact in account_data['entity_impacts'][:5]:  # Top 5
+                        ws[f"A{row}"] = impact.get('entity', '')
+                        ws[f"B{row}"] = format_vnd(impact.get('change', 0))
+                        ws[f"C{row}"] = f"{impact.get('pct_change', 0):+.1f}%"
+                        ws[f"D{row}"] = format_vnd(impact.get('prev_val', 0))
+                        ws[f"E{row}"] = format_vnd(impact.get('curr_val', 0))
+
+                        # Color code entity impacts
+                        entity_change = impact.get('change', 0)
+                        if entity_change > 0:  # Higher SG&A expense
+                            fill_color = PatternFill(start_color="FFEBEE", end_color="FFEBEE", fill_type="solid")
+                        elif entity_change < 0:  # Lower SG&A expense
+                            fill_color = PatternFill(start_color="E8F5E8", end_color="E8F5E8", fill_type="solid")
+                        else:
+                            fill_color = None
+
+                        if fill_color:
+                            for col in range(1, 6):
+                                ws.cell(row=row, column=col).fill = fill_color
+
+                        for col in range(1, 6):
+                            ws.cell(row=row, column=col).border = thin_border
+                        row += 1
+                row += 1
+        row += 1
+
+    # SG&A 642 Analysis
+    if revenue_analysis.get('sga_642_analysis'):
+        ws[f"A{row}"] = "SG&A ANALYSIS - 642* ACCOUNTS"
+        ws[f"A{row}"].font = section_font
+        row += 1
+
+        for account_name, account_data in revenue_analysis['sga_642_analysis'].items():
+            if account_data.get('biggest_change') and abs(account_data['biggest_change'].get('change', 0)) > 500000:
+                ws[f"A{row}"] = f"Account: {account_name}"
+                ws[f"A{row}"].font = Font(bold=True, color="2F5597")
+                row += 1
+
+                biggest_change = account_data['biggest_change']
+                ws[f"A{row}"] = f"Biggest Change: {biggest_change.get('from', '')} → {biggest_change.get('to', '')}"
+                ws[f"B{row}"] = format_vnd(biggest_change.get('change', 0))
+                ws[f"C{row}"] = f"{biggest_change.get('pct_change', 0):+.1f}%"
+
+                # Color code changes
+                change_val = biggest_change.get('change', 0)
+                if change_val > 0:  # Higher SG&A is typically negative
+                    fill_color = PatternFill(start_color="FFEBEE", end_color="FFEBEE", fill_type="solid")
+                elif change_val < 0:  # Lower SG&A is typically positive
+                    fill_color = PatternFill(start_color="E8F5E8", end_color="E8F5E8", fill_type="solid")
+                else:
+                    fill_color = None
+
+                if fill_color:
+                    for col in range(1, 4):
+                        ws.cell(row=row, column=col).fill = fill_color
+                row += 1
+
+                # Top entity impacts
+                if account_data.get('entity_impacts'):
+                    ws[f"A{row}"] = "Top Entity Impacts:"
+                    ws[f"A{row}"].font = Font(bold=True)
+                    row += 1
+
+                    headers = ["Entity", "Change (VND)", "Change (%)", "Previous", "Current"]
+                    for col, header in enumerate(headers, 1):
+                        cell = ws.cell(row=row, column=col, value=header)
+                        cell.font = header_font
+                        cell.fill = header_fill
+                        cell.border = thin_border
+                    row += 1
+
+                    for impact in account_data['entity_impacts'][:5]:  # Top 5
+                        ws[f"A{row}"] = impact.get('entity', '')
+                        ws[f"B{row}"] = format_vnd(impact.get('change', 0))
+                        ws[f"C{row}"] = f"{impact.get('pct_change', 0):+.1f}%"
+                        ws[f"D{row}"] = format_vnd(impact.get('prev_val', 0))
+                        ws[f"E{row}"] = format_vnd(impact.get('curr_val', 0))
+
+                        # Color code entity impacts
+                        entity_change = impact.get('change', 0)
+                        if entity_change > 0:  # Higher SG&A expense
+                            fill_color = PatternFill(start_color="FFEBEE", end_color="FFEBEE", fill_type="solid")
+                        elif entity_change < 0:  # Lower SG&A expense
+                            fill_color = PatternFill(start_color="E8F5E8", end_color="E8F5E8", fill_type="solid")
+                        else:
+                            fill_color = None
+
+                        if fill_color:
+                            for col in range(1, 6):
+                                ws.cell(row=row, column=col).fill = fill_color
+
+                        for col in range(1, 6):
+                            ws.cell(row=row, column=col).border = thin_border
+                        row += 1
+                row += 1
+        row += 1
+
+    # Combined SG&A Analysis
+    if revenue_analysis.get('combined_sga_analysis', {}).get('ratio_trend'):
+        ws[f"A{row}"] = "COMBINED SG&A ANALYSIS (641* + 642*)"
+        ws[f"A{row}"].font = section_font
+        row += 1
+
+        # Summary stats
+        combined_analysis = revenue_analysis['combined_sga_analysis']
+        ws[f"A{row}"] = f"Total 641* Accounts: {combined_analysis.get('total_641_accounts', 0)}"
+        row += 1
+        ws[f"A{row}"] = f"Total 642* Accounts: {combined_analysis.get('total_642_accounts', 0)}"
+        row += 1
+        row += 1
+
+        # SG&A Ratio Trend
+        ws[f"A{row}"] = "SG&A Ratio Trend (% of Revenue)"
+        ws[f"A{row}"].font = Font(bold=True)
+        row += 1
+
+        headers = ["Month", "Revenue", "641* Total", "642* Total", "Total SG&A", "SG&A Ratio %", "Change"]
+        for col, header in enumerate(headers, 1):
+            cell = ws.cell(row=row, column=col, value=header)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.border = thin_border
+        row += 1
+
+        prev_ratio = None
+        for sga_data in combined_analysis['ratio_trend']:
+            ws[f"A{row}"] = sga_data.get('month', '')
+            ws[f"B{row}"] = format_vnd(sga_data.get('revenue', 0))
+            ws[f"C{row}"] = format_vnd(sga_data.get('sga_641_total', 0))
+            ws[f"D{row}"] = format_vnd(sga_data.get('sga_642_total', 0))
+            ws[f"E{row}"] = format_vnd(sga_data.get('total_sga', 0))
+            ws[f"F{row}"] = f"{sga_data.get('sga_ratio_pct', 0):.1f}%"
+
+            # Calculate change from previous month
+            current_ratio = sga_data.get('sga_ratio_pct', 0)
+            if prev_ratio is not None:
+                change = current_ratio - prev_ratio
+                ws[f"G{row}"] = f"{change:+.1f}pp"
+                # Color code ratio changes (higher SG&A ratio is typically worse)
+                if change > 2:  # Significant increase
+                    ws.cell(row=row, column=7).fill = PatternFill(start_color="FFEBEE", end_color="FFEBEE", fill_type="solid")
+                elif change < -2:  # Significant decrease
+                    ws.cell(row=row, column=7).fill = PatternFill(start_color="E8F5E8", end_color="E8F5E8", fill_type="solid")
+            else:
+                ws[f"G{row}"] = "N/A"
+
+            prev_ratio = current_ratio
+
+            for col in range(1, 8):
+                ws.cell(row=row, column=col).border = thin_border
+            row += 1
+        row += 1
+
     # Auto-fit columns
     for column in ws.columns:
         max_length = 0
@@ -1687,6 +1889,7 @@ def analyze_comprehensive_revenue_impact_from_bytes(xl_bytes: bytes, filename: s
     2. Which customers/entities drive the revenue changes for each account?
     3. Gross margin analysis: (Revenue - Cost)/Revenue and risk identification
     4. Utility revenue vs cost pairing analysis
+    5. SG&A expense analysis (641* and 642*) for expense management insights
     """
     try:
         xls = pd.ExcelFile(io.BytesIO(xl_bytes))
@@ -1734,6 +1937,9 @@ def analyze_comprehensive_revenue_impact_from_bytes(xl_bytes: bytes, filename: s
             'revenue_by_account': {},
             'gross_margin_analysis': {},
             'utility_analysis': {},
+            'sga_641_analysis': {},
+            'sga_642_analysis': {},
+            'combined_sga_analysis': {},
             'risk_assessment': []
         }
 
@@ -1967,7 +2173,213 @@ def analyze_comprehensive_revenue_impact_from_bytes(xl_bytes: bytes, filename: s
             }
 
         # =====================================
-        # 5. SUMMARY METRICS
+        # 5. SG&A ANALYSIS (641* Accounts)
+        # =====================================
+
+        sga_641_accounts = {}
+        current_sga_641_account = None
+
+        # Look for 641* SG&A accounts
+        for i, row in data_df.iterrows():
+            account_desc = str(row['Account_Description']) if pd.notna(row['Account_Description']) else ''
+            entity = str(row['Entity']) if pd.notna(row['Entity']) else ''
+
+            if '641' in account_desc:
+                current_sga_641_account = account_desc
+                if current_sga_641_account not in sga_641_accounts:
+                    sga_641_accounts[current_sga_641_account] = {
+                        'entities': {},
+                        'monthly_totals': {month: 0 for month in month_cols[:8]}
+                    }
+
+            elif current_sga_641_account and entity and entity != 'nan' and not entity.startswith('Total'):
+                if entity not in sga_641_accounts[current_sga_641_account]['entities']:
+                    sga_641_accounts[current_sga_641_account]['entities'][entity] = {}
+
+                for month in month_cols[:8]:
+                    val = clean_numeric_value(row[month])
+                    sga_641_accounts[current_sga_641_account]['entities'][entity][month] = val
+                    sga_641_accounts[current_sga_641_account]['monthly_totals'][month] += val
+
+        # Analyze each 641 account for changes
+        for account, data in sga_641_accounts.items():
+            months_list = list(data['monthly_totals'].keys())
+            account_changes = []
+
+            for i in range(1, len(months_list)):
+                prev_month = months_list[i-1]
+                curr_month = months_list[i]
+                prev_val = data['monthly_totals'][prev_month]
+                curr_val = data['monthly_totals'][curr_month]
+                change = curr_val - prev_val
+                pct_change = (change / prev_val * 100) if prev_val != 0 else 0
+
+                account_changes.append({
+                    'from': prev_month,
+                    'to': curr_month,
+                    'change': change,
+                    'pct_change': pct_change,
+                    'prev_val': prev_val,
+                    'curr_val': curr_val
+                })
+
+            # Find biggest change for entity analysis
+            biggest_change = max(account_changes, key=lambda x: abs(x['change'])) if account_changes else None
+            entity_impacts = []
+
+            if biggest_change and abs(biggest_change['change']) > 500000:  # > 500K VND
+                for entity, entity_data in data['entities'].items():
+                    prev_val = entity_data.get(biggest_change['from'], 0)
+                    curr_val = entity_data.get(biggest_change['to'], 0)
+                    entity_change = curr_val - prev_val
+
+                    if abs(entity_change) > 50000:  # > 50K VND
+                        entity_impacts.append({
+                            'entity': entity,
+                            'change': entity_change,
+                            'prev_val': prev_val,
+                            'curr_val': curr_val,
+                            'pct_change': (entity_change / prev_val * 100) if prev_val != 0 else 0
+                        })
+
+                entity_impacts.sort(key=lambda x: abs(x['change']), reverse=True)
+
+            sga_641_accounts[account]['changes'] = account_changes
+            sga_641_accounts[account]['biggest_change'] = biggest_change
+            sga_641_accounts[account]['entity_impacts'] = entity_impacts[:5]  # Top 5
+
+        analysis_result['sga_641_analysis'] = sga_641_accounts
+
+        # =====================================
+        # 6. SG&A ANALYSIS (642* Accounts)
+        # =====================================
+
+        sga_642_accounts = {}
+        current_sga_642_account = None
+
+        # Look for 642* SG&A accounts
+        for i, row in data_df.iterrows():
+            account_desc = str(row['Account_Description']) if pd.notna(row['Account_Description']) else ''
+            entity = str(row['Entity']) if pd.notna(row['Entity']) else ''
+
+            if '642' in account_desc:
+                current_sga_642_account = account_desc
+                if current_sga_642_account not in sga_642_accounts:
+                    sga_642_accounts[current_sga_642_account] = {
+                        'entities': {},
+                        'monthly_totals': {month: 0 for month in month_cols[:8]}
+                    }
+
+            elif current_sga_642_account and entity and entity != 'nan' and not entity.startswith('Total'):
+                if entity not in sga_642_accounts[current_sga_642_account]['entities']:
+                    sga_642_accounts[current_sga_642_account]['entities'][entity] = {}
+
+                for month in month_cols[:8]:
+                    val = clean_numeric_value(row[month])
+                    sga_642_accounts[current_sga_642_account]['entities'][entity][month] = val
+                    sga_642_accounts[current_sga_642_account]['monthly_totals'][month] += val
+
+        # Analyze each 642 account for changes
+        for account, data in sga_642_accounts.items():
+            months_list = list(data['monthly_totals'].keys())
+            account_changes = []
+
+            for i in range(1, len(months_list)):
+                prev_month = months_list[i-1]
+                curr_month = months_list[i]
+                prev_val = data['monthly_totals'][prev_month]
+                curr_val = data['monthly_totals'][curr_month]
+                change = curr_val - prev_val
+                pct_change = (change / prev_val * 100) if prev_val != 0 else 0
+
+                account_changes.append({
+                    'from': prev_month,
+                    'to': curr_month,
+                    'change': change,
+                    'pct_change': pct_change,
+                    'prev_val': prev_val,
+                    'curr_val': curr_val
+                })
+
+            # Find biggest change for entity analysis
+            biggest_change = max(account_changes, key=lambda x: abs(x['change'])) if account_changes else None
+            entity_impacts = []
+
+            if biggest_change and abs(biggest_change['change']) > 500000:  # > 500K VND
+                for entity, entity_data in data['entities'].items():
+                    prev_val = entity_data.get(biggest_change['from'], 0)
+                    curr_val = entity_data.get(biggest_change['to'], 0)
+                    entity_change = curr_val - prev_val
+
+                    if abs(entity_change) > 50000:  # > 50K VND
+                        entity_impacts.append({
+                            'entity': entity,
+                            'change': entity_change,
+                            'prev_val': prev_val,
+                            'curr_val': curr_val,
+                            'pct_change': (entity_change / prev_val * 100) if prev_val != 0 else 0
+                        })
+
+                entity_impacts.sort(key=lambda x: abs(x['change']), reverse=True)
+
+            sga_642_accounts[account]['changes'] = account_changes
+            sga_642_accounts[account]['biggest_change'] = biggest_change
+            sga_642_accounts[account]['entity_impacts'] = entity_impacts[:5]  # Top 5
+
+        analysis_result['sga_642_analysis'] = sga_642_accounts
+
+        # =====================================
+        # 7. COMBINED SG&A ANALYSIS (641* + 642*)
+        # =====================================
+
+        # Calculate total SG&A expenses by month
+        total_sga_by_month = {}
+        for month in month_cols[:8]:
+            total_641 = sum([account_data['monthly_totals'][month] for account_data in sga_641_accounts.values()])
+            total_642 = sum([account_data['monthly_totals'][month] for account_data in sga_642_accounts.values()])
+            total_sga_by_month[month] = total_641 + total_642
+
+        # Calculate SG&A as percentage of revenue
+        sga_ratio_trend = []
+        for month in months:
+            total_revenue = total_revenue_by_month[month]
+            total_sga = total_sga_by_month[month]
+
+            if total_revenue > 0:
+                sga_ratio_pct = (total_sga / total_revenue) * 100
+                sga_ratio_trend.append({
+                    'month': month,
+                    'revenue': total_revenue,
+                    'sga_641_total': sum([account_data['monthly_totals'][month] for account_data in sga_641_accounts.values()]),
+                    'sga_642_total': sum([account_data['monthly_totals'][month] for account_data in sga_642_accounts.values()]),
+                    'total_sga': total_sga,
+                    'sga_ratio_pct': sga_ratio_pct
+                })
+
+                # Risk assessment for SG&A ratio changes
+                if len(sga_ratio_trend) > 1:
+                    prev_ratio = sga_ratio_trend[-2]['sga_ratio_pct']
+                    ratio_change = sga_ratio_pct - prev_ratio
+
+                    if abs(ratio_change) > 2:  # > 2% change in SG&A ratio
+                        risk_level = "HIGH" if ratio_change > 3 else "MEDIUM"
+                        analysis_result['risk_assessment'].append({
+                            'type': 'SG&A Ratio Change',
+                            'period': f"{sga_ratio_trend[-2]['month']} → {month}",
+                            'change': ratio_change,
+                            'risk_level': risk_level,
+                            'description': f"SG&A ratio changed by {ratio_change:+.1f}% (now {sga_ratio_pct:.1f}% of revenue)"
+                        })
+
+        analysis_result['combined_sga_analysis'] = {
+            'monthly_totals': total_sga_by_month,
+            'ratio_trend': sga_ratio_trend,
+            'total_641_accounts': len(sga_641_accounts),
+            'total_642_accounts': len(sga_642_accounts)
+        }
+
+        # =====================================
+        # 8. SUMMARY METRICS
         # =====================================
 
         analysis_result['summary'] = {
@@ -1976,6 +2388,10 @@ def analyze_comprehensive_revenue_impact_from_bytes(xl_bytes: bytes, filename: s
                                           key=lambda x: max([abs(c['change']) for c in x[1].get('changes', [])], default=0))[0] if revenue_accounts else None,
             'total_revenue_latest': total_revenue_by_month[months[-1]] if months else 0,
             'gross_margin_latest': gross_margin_trend[-1]['gross_margin_pct'] if gross_margin_trend else 0,
+            'total_sga_641_accounts': len(sga_641_accounts),
+            'total_sga_642_accounts': len(sga_642_accounts),
+            'total_sga_latest': total_sga_by_month[months[-1]] if months and total_sga_by_month else 0,
+            'sga_ratio_latest': sga_ratio_trend[-1]['sga_ratio_pct'] if sga_ratio_trend else 0,
             'risk_periods': [r for r in analysis_result['risk_assessment'] if r['risk_level'] == 'HIGH']
         }
 
