@@ -730,3 +730,357 @@ a:hover { text-decoration:underline; }
   transform: translateY(-2px) !important;
   box-shadow: 0 6px 16px rgba(34, 197, 94, 0.4) !important;
 }
+
+/* =================== COMPREHENSIVE REVENUE ANALYSIS STYLES =================== */
+
+.revenue-results-section {
+  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+  border: 2px solid #0ea5e9;
+  border-radius: 16px;
+  padding: 24px;
+  margin-top: 24px;
+}
+
+.revenue-results-title {
+  color: #0c4a6e;
+  font-size: 20px;
+  font-weight: 600;
+  margin: 0 0 20px 0;
+  text-align: center;
+}
+
+.revenue-analysis-content {
+  max-height: 600px;
+  overflow-y: auto;
+  padding-right: 8px;
+}
+
+.analysis-section {
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.analysis-section h4 {
+  color: #1e40af;
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0 0 16px 0;
+  border-bottom: 2px solid #e0e7ff;
+  padding-bottom: 8px;
+}
+
+.summary-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.stat {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: #f8fafc;
+  border-radius: 8px;
+  border-left: 4px solid #3b82f6;
+}
+
+.stat label {
+  font-weight: 500;
+  color: #4b5563;
+  font-size: 14px;
+}
+
+.stat span {
+  font-weight: 600;
+  color: #1f2937;
+  font-size: 14px;
+}
+
+/* Risk Assessment Styles */
+.risk-periods {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.risk-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 8px;
+  border-left: 4px solid;
+}
+
+.risk-item.high {
+  background: #fef2f2;
+  border-left-color: #dc2626;
+}
+
+.risk-item.medium {
+  background: #fffbeb;
+  border-left-color: #d97706;
+}
+
+.risk-badge {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.risk-item.high .risk-badge {
+  background: #dc2626;
+  color: white;
+}
+
+.risk-item.medium .risk-badge {
+  background: #d97706;
+  color: white;
+}
+
+.risk-details {
+  flex: 1;
+}
+
+.risk-type {
+  font-size: 12px;
+  color: #6b7280;
+  font-weight: 500;
+}
+
+/* Revenue Changes Styles */
+.revenue-changes {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.change-item {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 8px;
+  border-left: 4px solid;
+}
+
+.change-item.positive {
+  background: #f0fdf4;
+  border-left-color: #22c55e;
+}
+
+.change-item.negative {
+  background: #fef2f2;
+  border-left-color: #ef4444;
+}
+
+.period {
+  font-weight: 600;
+  color: #1f2937;
+  font-size: 14px;
+}
+
+.values {
+  font-size: 13px;
+  color: #4b5563;
+}
+
+.change {
+  font-weight: 600;
+  font-size: 14px;
+  text-align: right;
+}
+
+.change-item.positive .change {
+  color: #16a34a;
+}
+
+.change-item.negative .change {
+  color: #dc2626;
+}
+
+/* Account Analysis Styles */
+.account-analysis {
+  background: #f9fafb;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+  border: 1px solid #e5e7eb;
+}
+
+.account-analysis h5 {
+  color: #1f2937;
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0 0 12px 0;
+}
+
+.biggest-change {
+  margin-bottom: 12px;
+  padding: 8px;
+  background: white;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.customer-impacts ul {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0 0;
+}
+
+.customer-impacts li {
+  padding: 8px;
+  margin-bottom: 6px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.customer-impacts li.positive {
+  background: #f0fdf4;
+  border-left: 3px solid #22c55e;
+}
+
+.customer-impacts li.negative {
+  background: #fef2f2;
+  border-left: 3px solid #ef4444;
+}
+
+/* Gross Margin Analysis Styles */
+.margin-trend {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.margin-item {
+  display: grid;
+  grid-template-columns: 100px 1fr;
+  gap: 12px;
+  padding: 12px;
+  background: #f8fafc;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+}
+
+.margin-month {
+  font-weight: 600;
+  color: #1f2937;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+}
+
+.margin-pct {
+  font-weight: 600;
+  color: #1f2937;
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+
+.margin-change.positive {
+  color: #16a34a;
+}
+
+.margin-change.negative {
+  color: #dc2626;
+}
+
+.margin-breakdown {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+/* Utility Analysis Styles */
+.utility-margins {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.utility-item {
+  display: grid;
+  grid-template-columns: 100px 1fr;
+  gap: 12px;
+  padding: 12px;
+  background: #f8fafc;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+}
+
+.utility-month {
+  font-weight: 600;
+  color: #1f2937;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+}
+
+.utility-margin {
+  font-weight: 600;
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+
+.utility-margin.positive {
+  color: #16a34a;
+}
+
+.utility-margin.negative {
+  color: #dc2626;
+}
+
+.utility-breakdown {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.no-data {
+  color: #6b7280;
+  font-style: italic;
+  text-align: center;
+  padding: 20px;
+}
+
+.error {
+  color: #dc2626;
+  background: #fef2f2;
+  padding: 16px;
+  border-radius: 8px;
+  border: 1px solid #fecaca;
+  text-align: center;
+}
+
+/* Positive/Negative color classes */
+.positive {
+  color: #16a34a !important;
+}
+
+.negative {
+  color: #dc2626 !important;
+}
+
+/* Scrollbar Styles for Revenue Analysis Content */
+.revenue-analysis-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.revenue-analysis-content::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 3px;
+}
+
+.revenue-analysis-content::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+
+.revenue-analysis-content::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}

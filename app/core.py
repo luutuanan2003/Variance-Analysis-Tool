@@ -1355,7 +1355,7 @@ def process_all_ai_mode(
     return bio.getvalue(), debug_files
 
 # -----------------------------------------------------------------------------
-# Revenue Impact Analysis (from Python tool)
+# Comprehensive Revenue Impact Analysis
 # -----------------------------------------------------------------------------
 
 def clean_numeric_value(val):
@@ -1368,6 +1368,311 @@ def clean_numeric_value(val):
         return float(str(val).replace(',', '').replace(' ', ''))
     except:
         return 0.0
+
+def analyze_comprehensive_revenue_impact_from_bytes(xl_bytes: bytes, filename: str) -> dict:
+    """
+    Comprehensive Revenue Impact Analysis
+    Answers specific questions:
+    1. If revenue increases (511*), which specific revenue accounts drive the increase?
+    2. Which customers/entities drive the revenue changes for each account?
+    3. Gross margin analysis: (Revenue - Cost)/Revenue and risk identification
+    4. Utility revenue vs cost pairing analysis
+    """
+    try:
+        xls = pd.ExcelFile(io.BytesIO(xl_bytes))
+
+        if 'PL Breakdown' not in xls.sheet_names:
+            return {"error": "PL Breakdown sheet not found"}
+
+        pl_df = pd.read_excel(xls, sheet_name='PL Breakdown')
+
+        # Find data start row
+        data_start_row = None
+        for i, row in pl_df.iterrows():
+            if str(row.iloc[1]).strip().lower() == 'entity':
+                data_start_row = i
+                break
+
+        if data_start_row is None:
+            return {"error": "Could not find data start row with 'Entity' header"}
+
+        # Extract month columns
+        month_headers = pl_df.iloc[data_start_row + 1].fillna('').astype(str).tolist()
+        month_cols = []
+        for h2 in month_headers:
+            if any(month in str(h2) for month in ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug']):
+                month_cols.append(str(h2).strip())
+
+        # Extract data
+        data_df = pl_df.iloc[data_start_row + 2:].copy()
+        actual_col_count = len(data_df.columns)
+        new_columns = ['Account_Description', 'Entity', 'Account_Code']
+        new_columns.extend(month_cols)
+        while len(new_columns) < actual_col_count:
+            new_columns.append(f'Extra_{len(new_columns)}')
+        data_df.columns = new_columns[:actual_col_count]
+        data_df = data_df.dropna(how='all')
+
+        # Extract subsidiary name
+        subsidiary = extract_subsidiary_name_from_bytes(xl_bytes, filename)
+
+        analysis_result = {
+            'subsidiary': subsidiary,
+            'filename': filename,
+            'months_analyzed': month_cols[:8],
+            'total_revenue_analysis': {},
+            'revenue_by_account': {},
+            'gross_margin_analysis': {},
+            'utility_analysis': {},
+            'risk_assessment': []
+        }
+
+        # =====================================
+        # 1. TOTAL REVENUE ANALYSIS (511*)
+        # =====================================
+
+        total_revenue_by_month = {}
+        for month in month_cols[:8]:
+            month_total = 0
+            for i, row in data_df.iterrows():
+                entity = str(row['Entity']) if 'Entity' in row and pd.notna(row['Entity']) else ''
+                if entity and entity != 'nan' and not entity.startswith('Total'):
+                    # Check if under a 511* revenue account
+                    for prev_i in range(max(0, i-10), i):
+                        if prev_i < len(data_df):
+                            prev_desc = str(data_df.iloc[prev_i]['Account_Description']) if pd.notna(data_df.iloc[prev_i]['Account_Description']) else ''
+                            if '511' in prev_desc and 'revenue' in prev_desc.lower():
+                                val = clean_numeric_value(row[month])
+                                month_total += val
+                                break
+            total_revenue_by_month[month] = month_total
+
+        # Calculate month-over-month changes
+        months = list(total_revenue_by_month.keys())
+        total_revenue_changes = []
+        for i in range(1, len(months)):
+            prev_month = months[i-1]
+            curr_month = months[i]
+            prev_revenue = total_revenue_by_month[prev_month]
+            curr_revenue = total_revenue_by_month[curr_month]
+            change = curr_revenue - prev_revenue
+            pct_change = (change / prev_revenue * 100) if prev_revenue != 0 else 0
+
+            total_revenue_changes.append({
+                'from': prev_month,
+                'to': curr_month,
+                'prev_value': prev_revenue,
+                'curr_value': curr_revenue,
+                'change': change,
+                'pct_change': pct_change
+            })
+
+        analysis_result['total_revenue_analysis'] = {
+            'monthly_totals': total_revenue_by_month,
+            'changes': total_revenue_changes
+        }
+
+        # =====================================
+        # 2. REVENUE BY ACCOUNT TYPE (511.xxx)
+        # =====================================
+
+        revenue_accounts = {}
+        current_account = None
+
+        for i, row in data_df.iterrows():
+            account_desc = str(row['Account_Description']) if pd.notna(row['Account_Description']) else ''
+            entity = str(row['Entity']) if pd.notna(row['Entity']) else ''
+
+            # Revenue account headers
+            if '511' in account_desc and 'revenue' in account_desc.lower():
+                current_account = account_desc
+                if current_account not in revenue_accounts:
+                    revenue_accounts[current_account] = {
+                        'entities': {},
+                        'monthly_totals': {month: 0 for month in month_cols[:8]}
+                    }
+
+            # Entity data under current account
+            elif current_account and entity and entity != 'nan' and not entity.startswith('Total'):
+                if entity not in revenue_accounts[current_account]['entities']:
+                    revenue_accounts[current_account]['entities'][entity] = {}
+
+                for month in month_cols[:8]:
+                    val = clean_numeric_value(row[month])
+                    revenue_accounts[current_account]['entities'][entity][month] = val
+                    revenue_accounts[current_account]['monthly_totals'][month] += val
+
+        # Analyze each revenue account
+        for account, data in revenue_accounts.items():
+            months = list(data['monthly_totals'].keys())
+            account_changes = []
+
+            for i in range(1, len(months)):
+                prev_month = months[i-1]
+                curr_month = months[i]
+                prev_val = data['monthly_totals'][prev_month]
+                curr_val = data['monthly_totals'][curr_month]
+                change = curr_val - prev_val
+                pct_change = (change / prev_val * 100) if prev_val != 0 else 0
+
+                account_changes.append({
+                    'from': prev_month,
+                    'to': curr_month,
+                    'change': change,
+                    'pct_change': pct_change,
+                    'prev_val': prev_val,
+                    'curr_val': curr_val
+                })
+
+            # Find biggest change for customer analysis
+            biggest_change = max(account_changes, key=lambda x: abs(x['change'])) if account_changes else None
+            customer_impacts = []
+
+            if biggest_change and abs(biggest_change['change']) > 1000000:  # > 1M VND
+                for entity, entity_data in data['entities'].items():
+                    prev_val = entity_data.get(biggest_change['from'], 0)
+                    curr_val = entity_data.get(biggest_change['to'], 0)
+                    entity_change = curr_val - prev_val
+
+                    if abs(entity_change) > 100000:  # > 100K VND
+                        customer_impacts.append({
+                            'entity': entity,
+                            'change': entity_change,
+                            'prev_val': prev_val,
+                            'curr_val': curr_val,
+                            'pct_change': (entity_change / prev_val * 100) if prev_val != 0 else 0
+                        })
+
+                customer_impacts.sort(key=lambda x: abs(x['change']), reverse=True)
+
+            revenue_accounts[account]['changes'] = account_changes
+            revenue_accounts[account]['biggest_change'] = biggest_change
+            revenue_accounts[account]['customer_impacts'] = customer_impacts[:5]  # Top 5
+
+        analysis_result['revenue_by_account'] = revenue_accounts
+
+        # =====================================
+        # 3. GROSS MARGIN ANALYSIS
+        # =====================================
+
+        cost_accounts = {}
+        current_cost_account = None
+
+        # Look for 632* cost accounts
+        for i, row in data_df.iterrows():
+            account_desc = str(row['Account_Description']) if pd.notna(row['Account_Description']) else ''
+            entity = str(row['Entity']) if pd.notna(row['Entity']) else ''
+
+            if '632' in account_desc and 'cost' in account_desc.lower():
+                current_cost_account = account_desc
+                if current_cost_account not in cost_accounts:
+                    cost_accounts[current_cost_account] = {
+                        'entities': {},
+                        'monthly_totals': {month: 0 for month in month_cols[:8]}
+                    }
+
+            elif current_cost_account and entity and entity != 'nan' and not entity.startswith('Total'):
+                if entity not in cost_accounts[current_cost_account]['entities']:
+                    cost_accounts[current_cost_account]['entities'][entity] = {}
+
+                for month in month_cols[:8]:
+                    val = clean_numeric_value(row[month])
+                    cost_accounts[current_cost_account]['entities'][entity][month] = val
+                    cost_accounts[current_cost_account]['monthly_totals'][month] += val
+
+        # Calculate gross margins
+        gross_margin_trend = []
+        for i in range(len(months)):
+            month = months[i]
+            total_revenue = total_revenue_by_month[month]
+            total_cost = sum([cost_data['monthly_totals'][month] for cost_data in cost_accounts.values()])
+
+            if total_revenue > 0:
+                gross_margin_pct = ((total_revenue - total_cost) / total_revenue) * 100
+                gross_margin_trend.append({
+                    'month': month,
+                    'revenue': total_revenue,
+                    'cost': total_cost,
+                    'gross_margin_pct': gross_margin_pct
+                })
+
+                if i > 0:
+                    prev_gm = gross_margin_trend[i-1]['gross_margin_pct']
+                    gm_change = gross_margin_pct - prev_gm
+
+                    if abs(gm_change) > 1:  # > 1% change
+                        risk_level = "HIGH" if gm_change < -2 else "MEDIUM"
+                        analysis_result['risk_assessment'].append({
+                            'type': 'Gross Margin Change',
+                            'period': f"{gross_margin_trend[i-1]['month']} → {month}",
+                            'change': gm_change,
+                            'risk_level': risk_level,
+                            'description': f"Gross margin changed by {gm_change:+.1f}%"
+                        })
+
+        analysis_result['gross_margin_analysis'] = {
+            'trend': gross_margin_trend,
+            'cost_accounts': cost_accounts
+        }
+
+        # =====================================
+        # 4. UTILITY ANALYSIS
+        # =====================================
+
+        utility_revenue = None
+        utility_cost = None
+
+        for account, data in revenue_accounts.items():
+            if 'utilit' in account.lower():
+                utility_revenue = data
+                break
+
+        for account, data in cost_accounts.items():
+            if 'utilit' in account.lower():
+                utility_cost = data
+                break
+
+        if utility_revenue and utility_cost:
+            utility_margins = []
+            for month in months:
+                rev = utility_revenue['monthly_totals'][month]
+                cost = utility_cost['monthly_totals'][month]
+                if rev > 0:
+                    gm_pct = ((rev - cost) / rev) * 100
+                    utility_margins.append({
+                        'month': month,
+                        'revenue': rev,
+                        'cost': cost,
+                        'margin_pct': gm_pct
+                    })
+
+            analysis_result['utility_analysis'] = {
+                'available': True,
+                'margins': utility_margins
+            }
+        else:
+            analysis_result['utility_analysis'] = {
+                'available': False,
+                'reason': 'Could not find matching utility revenue/cost accounts'
+            }
+
+        # =====================================
+        # 5. SUMMARY METRICS
+        # =====================================
+
+        analysis_result['summary'] = {
+            'total_accounts': len([a for a in revenue_accounts if not a.startswith('Total')]),
+            'highest_variance_account': max(revenue_accounts.items(),
+                                          key=lambda x: max([abs(c['change']) for c in x[1].get('changes', [])], default=0))[0] if revenue_accounts else None,
+            'total_revenue_latest': total_revenue_by_month[months[-1]] if months else 0,
+            'gross_margin_latest': gross_margin_trend[-1]['gross_margin_pct'] if gross_margin_trend else 0,
+            'risk_periods': [r for r in analysis_result['risk_assessment'] if r['risk_level'] == 'HIGH']
+        }
+
+        return analysis_result
+
+    except Exception as e:
+        return {"error": f"Comprehensive analysis failed: {str(e)}"}
 
 def analyze_revenue_impact_from_bytes(xl_bytes: bytes, filename: str) -> dict:
     """

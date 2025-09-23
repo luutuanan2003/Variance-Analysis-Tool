@@ -17,7 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from .core import process_all, DEFAULT_CONFIG, analyze_revenue_impact_from_bytes
+from .core import process_all, DEFAULT_CONFIG, analyze_revenue_impact_from_bytes, analyze_comprehensive_revenue_impact_from_bytes
 
 # ---------------------------------------------------------------------
 # App initialization
@@ -389,6 +389,34 @@ async def analyze_revenue(
 
         # Run revenue impact analysis
         analysis_result = analyze_revenue_impact_from_bytes(file_bytes, filename)
+
+        return JSONResponse(content=analysis_result)
+
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+# ---------------------------------------------------------------------
+# Comprehensive Revenue Impact Analysis endpoint
+# ---------------------------------------------------------------------
+@app.post("/analyze-comprehensive-revenue")
+async def analyze_comprehensive_revenue(
+    excel_file: UploadFile = File(...),
+):
+    """
+    Comprehensive Revenue Impact Analysis
+    Answers specific questions:
+    1. If revenue increases (511*), which specific revenue accounts drive the increase?
+    2. Which customers/entities drive the revenue changes for each account?
+    3. Gross margin analysis: (Revenue - Cost)/Revenue and risk identification
+    4. Utility revenue vs cost pairing analysis
+    """
+    try:
+        # Read the uploaded file
+        file_bytes = await excel_file.read()
+        filename = excel_file.filename or "input.xlsx"
+
+        # Run comprehensive revenue impact analysis
+        analysis_result = analyze_comprehensive_revenue_impact_from_bytes(file_bytes, filename)
 
         return JSONResponse(content=analysis_result)
 
