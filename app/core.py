@@ -1180,6 +1180,171 @@ def process_all(
     else:
         return process_all_python_mode(files, corr_rules, season_rules, CONFIG)
 
+def _add_revenue_analysis_to_sheet(ws, revenue_analysis: dict):
+    """Add revenue analysis data to an Excel worksheet in a structured format."""
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
+    # Define styles
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+    section_font = Font(bold=True, size=12, color="2F5597")
+    currency_font = Font(name="Arial", size=10)
+
+    thin_border = Border(
+        left=Side(style='thin'), right=Side(style='thin'),
+        top=Side(style='thin'), bottom=Side(style='thin')
+    )
+
+    def format_vnd(amount):
+        if isinstance(amount, (int, float)) and not pd.isna(amount):
+            return f"{amount:,.0f} VND"
+        return "N/A"
+
+    row = 1
+
+    # Title
+    ws[f"A{row}"] = "COMPREHENSIVE REVENUE ANALYSIS"
+    ws[f"A{row}"].font = Font(bold=True, size=16, color="2F5597")
+    row += 2
+
+    # Executive Summary
+    if revenue_analysis.get('summary'):
+        summary = revenue_analysis['summary']
+        ws[f"A{row}"] = "EXECUTIVE SUMMARY"
+        ws[f"A{row}"].font = section_font
+        row += 1
+
+        summary_data = [
+            ["Subsidiary", revenue_analysis.get('subsidiary', 'N/A')],
+            ["Months Analyzed", len(revenue_analysis.get('months_analyzed', []))],
+            ["Revenue Accounts", summary.get('total_accounts', 0)],
+            ["Latest Total Revenue", format_vnd(summary.get('total_revenue_latest', 0))],
+            ["Latest Gross Margin %", f"{summary.get('gross_margin_latest', 0):.1f}%" if summary.get('gross_margin_latest') else 'N/A']
+        ]
+
+        for label, value in summary_data:
+            ws[f"A{row}"] = label
+            ws[f"B{row}"] = value
+            ws[f"A{row}"].font = Font(bold=True)
+            row += 1
+        row += 1
+
+    # Risk Assessment
+    if revenue_analysis.get('risk_assessment'):
+        ws[f"A{row}"] = "RISK ASSESSMENT"
+        ws[f"A{row}"].font = section_font
+        row += 1
+
+        # Headers
+        headers = ["Period", "Risk Level", "Type", "Description"]
+        for col, header in enumerate(headers, 1):
+            cell = ws.cell(row=row, column=col, value=header)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.border = thin_border
+        row += 1
+
+        for risk in revenue_analysis['risk_assessment']:
+            ws[f"A{row}"] = risk.get('period', '')
+            ws[f"B{row}"] = risk.get('risk_level', '')
+            ws[f"C{row}"] = risk.get('type', '')
+            ws[f"D{row}"] = risk.get('description', '')
+
+            # Color code risk levels
+            risk_level = risk.get('risk_level', '').lower()
+            if risk_level == 'high':
+                fill_color = PatternFill(start_color="FFEBEE", end_color="FFEBEE", fill_type="solid")
+            elif risk_level == 'medium':
+                fill_color = PatternFill(start_color="FFF3E0", end_color="FFF3E0", fill_type="solid")
+            else:
+                fill_color = PatternFill(start_color="E8F5E8", end_color="E8F5E8", fill_type="solid")
+
+            for col in range(1, 5):
+                cell = ws.cell(row=row, column=col)
+                cell.fill = fill_color
+                cell.border = thin_border
+            row += 1
+        row += 1
+
+    # Total Revenue Trend
+    if revenue_analysis.get('total_revenue_analysis', {}).get('changes'):
+        ws[f"A{row}"] = "TOTAL REVENUE TREND (511*)"
+        ws[f"A{row}"].font = section_font
+        row += 1
+
+        # Headers
+        headers = ["Period", "Previous Value", "Current Value", "Change (VND)", "Change (%)"]
+        for col, header in enumerate(headers, 1):
+            cell = ws.cell(row=row, column=col, value=header)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.border = thin_border
+        row += 1
+
+        for change in revenue_analysis['total_revenue_analysis']['changes']:
+            period = f"{change.get('from', '')} → {change.get('to', '')}"
+            ws[f"A{row}"] = period
+            ws[f"B{row}"] = format_vnd(change.get('prev_value', 0))
+            ws[f"C{row}"] = format_vnd(change.get('curr_value', 0))
+            ws[f"D{row}"] = format_vnd(change.get('change', 0))
+            ws[f"E{row}"] = f"{change.get('pct_change', 0):+.1f}%"
+
+            # Color code positive/negative changes
+            change_val = change.get('change', 0)
+            if change_val > 0:
+                fill_color = PatternFill(start_color="E8F5E8", end_color="E8F5E8", fill_type="solid")
+            elif change_val < 0:
+                fill_color = PatternFill(start_color="FFEBEE", end_color="FFEBEE", fill_type="solid")
+            else:
+                fill_color = None
+
+            for col in range(1, 6):
+                cell = ws.cell(row=row, column=col)
+                if fill_color:
+                    cell.fill = fill_color
+                cell.border = thin_border
+            row += 1
+        row += 1
+
+    # Gross Margin Analysis
+    if revenue_analysis.get('gross_margin_analysis', {}).get('trend'):
+        ws[f"A{row}"] = "GROSS MARGIN ANALYSIS"
+        ws[f"A{row}"].font = section_font
+        row += 1
+
+        # Headers
+        headers = ["Month", "Revenue", "Cost", "Gross Margin %"]
+        for col, header in enumerate(headers, 1):
+            cell = ws.cell(row=row, column=col, value=header)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.border = thin_border
+        row += 1
+
+        for margin_data in revenue_analysis['gross_margin_analysis']['trend']:
+            ws[f"A{row}"] = margin_data.get('month', '')
+            ws[f"B{row}"] = format_vnd(margin_data.get('revenue', 0))
+            ws[f"C{row}"] = format_vnd(margin_data.get('cost', 0))
+            ws[f"D{row}"] = f"{margin_data.get('gross_margin_pct', 0):.1f}%"
+
+            for col in range(1, 5):
+                ws.cell(row=row, column=col).border = thin_border
+            row += 1
+        row += 1
+
+    # Auto-fit columns
+    for column in ws.columns:
+        max_length = 0
+        column_letter = column[0].column_letter
+        for cell in column:
+            try:
+                if len(str(cell.value)) > max_length:
+                    max_length = len(str(cell.value))
+            except:
+                pass
+        adjusted_width = min(max_length + 2, 50)
+        ws.column_dimensions[column_letter].width = adjusted_width
+
 def process_all_python_mode(
     files: list[tuple[str, bytes]],
     corr_rules: Optional[pd.DataFrame] = None,
@@ -1227,6 +1392,22 @@ def process_all_python_mode(
     for r in dataframe_to_rows(anom_df, index=False, header=True):
         ws.append(r)
     apply_excel_formatting_ws(ws, anom_df, CONFIG)
+
+    # === ADD REVENUE ANALYSIS SHEET ===
+    print(f"\n📊 Adding Revenue Analysis sheet...")
+    try:
+        # Run revenue analysis for the first file
+        if files:
+            first_file_name, first_file_bytes = files[0]
+            revenue_analysis = analyze_comprehensive_revenue_impact_from_bytes(first_file_bytes, first_file_name)
+
+            # Create revenue analysis sheet
+            rev_ws = wb.create_sheet(title="Revenue Analysis")
+            _add_revenue_analysis_to_sheet(rev_ws, revenue_analysis)
+            print(f"✅ Revenue Analysis sheet added successfully")
+    except Exception as e:
+        print(f"⚠️  Revenue Analysis sheet creation failed: {e}")
+        # Continue without revenue analysis if it fails
 
     bio = io.BytesIO()
     wb.save(bio)

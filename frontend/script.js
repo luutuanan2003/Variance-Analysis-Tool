@@ -1,5 +1,5 @@
 // Additional JavaScript functionality for the merged variance analysis tool
-console.log("Merged Variance Analysis Tool script loaded");
+console.log("Variance Analysis Tool script loaded");
 
 // =================== COMPREHENSIVE REVENUE ANALYSIS ===================
 

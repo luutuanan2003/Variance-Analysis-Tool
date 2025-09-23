@@ -22,7 +22,7 @@ from .core import process_all, DEFAULT_CONFIG, analyze_revenue_impact_from_bytes
 # ---------------------------------------------------------------------
 # App initialization
 # ---------------------------------------------------------------------
-app = FastAPI(title="Merged Variance Analysis Tool API", version="1.0.0")
+app = FastAPI(title="Variance Analysis Tool API", version="1.0.0")
 
 # Global storage for debug files (in-memory, for simplicity)
 debug_files_store: dict[str, tuple[str, bytes]] = {}
