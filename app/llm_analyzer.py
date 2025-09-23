@@ -36,6 +36,7 @@ class LLMFinancialAnalyzer:
             lambda: OpenAI(**client_kwargs),
             lambda: OpenAI(api_key=self.openai_api_key),  # Explicit API key only
             lambda: self._init_openai_minimal(),  # Minimal initialization for cloud environments
+            lambda: self._init_openai_aggressive(),  # Most aggressive approach for stubborn cases
         ]
 
         self.openai_client = None
@@ -74,7 +75,7 @@ class LLMFinancialAnalyzer:
     def _init_openai_minimal(self):
         """Minimal OpenAI initialization for cloud environments that may have issues with advanced parameters."""
         # Clear any proxy-related environment variables that might interfere
-        proxy_vars = ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy']
+        proxy_vars = ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy']
         original_values = {}
         for var in proxy_vars:
             if var in os.environ:
@@ -83,13 +84,24 @@ class LLMFinancialAnalyzer:
                 print(f"   → Temporarily cleared {var} environment variable")
 
         try:
-            # Import fresh to avoid any cached module issues
-            import importlib
-            openai_module = importlib.import_module('openai')
-            OpenAIClient = getattr(openai_module, 'OpenAI')
+            # Try monkey-patching the OpenAI Client to ignore proxies parameter
+            import openai
+            original_init = openai.OpenAI.__init__
 
-            # Initialize with only the most basic parameters
-            client = OpenAIClient(api_key=self.openai_api_key)
+            def patched_init(self, **kwargs):
+                # Remove any proxy-related parameters that might cause issues
+                clean_kwargs = {k: v for k, v in kwargs.items() if k not in ['proxies', 'proxy', 'http_client']}
+                return original_init(self, **clean_kwargs)
+
+            # Temporarily patch the __init__ method
+            openai.OpenAI.__init__ = patched_init
+
+            try:
+                client = openai.OpenAI(api_key=self.openai_api_key)
+                print("   → Successfully initialized with monkey patch")
+            finally:
+                # Restore original __init__ method
+                openai.OpenAI.__init__ = original_init
 
             # Restore original environment variables
             for var, value in original_values.items():
@@ -99,6 +111,70 @@ class LLMFinancialAnalyzer:
         except Exception as e:
             print(f"   → Minimal initialization also failed: {e}")
             # Restore environment variables even if failed
+            for var, value in original_values.items():
+                os.environ[var] = value
+            raise e
+
+    def _init_openai_aggressive(self):
+        """Simplified aggressive OpenAI initialization for problematic cloud environments."""
+        print("   → Attempting aggressive initialization with module isolation")
+
+        # Clear ALL possible proxy and network-related environment variables
+        network_vars = [
+            'HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy',
+            'ALL_PROXY', 'all_proxy', 'NO_PROXY', 'no_proxy'
+        ]
+        original_values = {}
+        for var in network_vars:
+            if var in os.environ:
+                original_values[var] = os.environ[var]
+                del os.environ[var]
+                print(f"   → Cleared {var}")
+
+        try:
+            # Create a new isolated process to initialize OpenAI
+            import subprocess
+            import json
+
+            # Create a simple script to initialize OpenAI client
+            test_script = f'''
+import os
+import json
+from openai import OpenAI
+
+try:
+    client = OpenAI(api_key="{self.openai_api_key}")
+    print(json.dumps({{"success": True, "message": "OpenAI client created successfully"}}))
+except Exception as e:
+    print(json.dumps({{"success": False, "error": str(e)}}))
+'''
+
+            # Run in isolated subprocess
+            result = subprocess.run([sys.executable, '-c', test_script],
+                                  capture_output=True, text=True, timeout=30)
+
+            if result.returncode == 0:
+                try:
+                    output = json.loads(result.stdout.strip())
+                    if output.get('success'):
+                        # If subprocess succeeded, try here too with cleared environment
+                        from openai import OpenAI
+                        client = OpenAI(api_key=self.openai_api_key)
+                        print("   → Successfully created OpenAI client after environment isolation")
+
+                        # Restore environment variables
+                        for var, value in original_values.items():
+                            os.environ[var] = value
+
+                        return client
+                except Exception:
+                    pass
+
+            raise RuntimeError("Subprocess initialization test failed")
+
+        except Exception as e:
+            print(f"   → Aggressive initialization failed: {e}")
+            # Restore environment variables
             for var, value in original_values.items():
                 os.environ[var] = value
             raise e
