@@ -377,7 +377,7 @@ def _add_revenue_analysis_to_sheet(ws, revenue_analysis: dict):
         ws[f"A{row}"].font = section_font
         row += 1
 
-        headers = ["Period", "Previous Value", "Current Value", "Change (VND)", "Change (%)"]
+        headers = ["Period", "Previous Value", "Current Value", "Change (VND)", "Change (%)", "Account Breakdown"]
         for col, header in enumerate(headers, 1):
             cell = ws.cell(row=row, column=col, value=header)
             cell.font = header_font
@@ -392,6 +392,7 @@ def _add_revenue_analysis_to_sheet(ws, revenue_analysis: dict):
             ws[f"C{row}"] = format_vnd(change.get('curr_value', 0))
             ws[f"D{row}"] = format_vnd(change.get('change', 0))
             ws[f"E{row}"] = f"{change.get('pct_change', 0):+.1f}%"
+            ws[f"F{row}"] = change.get('account_breakdown', 'No account breakdown available')
 
             change_val = change.get('change', 0)
             if change_val > 0:
@@ -401,7 +402,7 @@ def _add_revenue_analysis_to_sheet(ws, revenue_analysis: dict):
             else:
                 fill_color = None
 
-            for col in range(1, 6):
+            for col in range(1, 7):  # Now 6 columns instead of 5
                 cell = ws.cell(row=row, column=col)
                 if fill_color:
                     cell.fill = fill_color
@@ -415,7 +416,7 @@ def _add_revenue_analysis_to_sheet(ws, revenue_analysis: dict):
         ws[f"A{row}"].font = section_font
         row += 1
 
-        headers = ["Period", "Previous Value", "Current Value", "Change (VND)", "Change (%)"]
+        headers = ["Period", "Previous Value", "Current Value", "Change (VND)", "Change (%)", "Account Breakdown"]
         for col, header in enumerate(headers, 1):
             cell = ws.cell(row=row, column=col, value=header)
             cell.font = header_font
@@ -429,6 +430,7 @@ def _add_revenue_analysis_to_sheet(ws, revenue_analysis: dict):
             ws[f"C{row}"] = format_vnd(change.get('curr_value', 0))
             ws[f"D{row}"] = format_vnd(change.get('change', 0))
             ws[f"E{row}"] = f"{change.get('pct_change', 0):+.1f}%"
+            ws[f"F{row}"] = change.get('account_breakdown', 'No account breakdown available')
 
             delta = change.get('change', 0)
             if delta > 0:
@@ -438,7 +440,7 @@ def _add_revenue_analysis_to_sheet(ws, revenue_analysis: dict):
             else:
                 fill_color = None
 
-            for col in range(1, 6):
+            for col in range(1, 7):  # Now 6 columns instead of 5
                 cell = ws.cell(row=row, column=col)
                 if fill_color:
                     cell.fill = fill_color
@@ -451,22 +453,26 @@ def _add_revenue_analysis_to_sheet(ws, revenue_analysis: dict):
         ws[f"A{row}"] = "TOTAL SG&A TREND (641*)"
         ws[f"A{row}"].font = section_font
         row += 1
-        # Reuse the same header and rendering pattern as above
+
+        headers = ["Period", "Previous Value", "Current Value", "Change (VND)", "Change (%)", "Account Breakdown"]
         for col, header in enumerate(headers, 1):
             cell = ws.cell(row=row, column=col, value=header)
             cell.font = header_font
             cell.fill = header_fill
             cell.border = thin_border
         row += 1
+
         for change in revenue_analysis['total_641_trend']['changes']:
             ws[f"A{row}"] = f"{change.get('from', '')} → {change.get('to', '')}"
             ws[f"B{row}"] = format_vnd(change.get('prev_value', 0))
             ws[f"C{row}"] = format_vnd(change.get('curr_value', 0))
             ws[f"D{row}"] = format_vnd(change.get('change', 0))
             ws[f"E{row}"] = f"{change.get('pct_change', 0):+.1f}%"
+            ws[f"F{row}"] = change.get('account_breakdown', 'No account breakdown available')
+
             delta = change.get('change', 0)
             fill_color = PatternFill(start_color="FFEBEE" if delta > 0 else "E8F5E8", end_color="FFEBEE" if delta > 0 else "E8F5E8", fill_type="solid") if delta != 0 else None
-            for col in range(1, 6):
+            for col in range(1, 7):  # Now 6 columns instead of 5
                 cell = ws.cell(row=row, column=col)
                 if fill_color:
                     cell.fill = fill_color
@@ -479,21 +485,26 @@ def _add_revenue_analysis_to_sheet(ws, revenue_analysis: dict):
         ws[f"A{row}"] = "TOTAL SG&A TREND (642*)"
         ws[f"A{row}"].font = section_font
         row += 1
+
+        headers = ["Period", "Previous Value", "Current Value", "Change (VND)", "Change (%)", "Account Breakdown"]
         for col, header in enumerate(headers, 1):
             cell = ws.cell(row=row, column=col, value=header)
             cell.font = header_font
             cell.fill = header_fill
             cell.border = thin_border
         row += 1
+
         for change in revenue_analysis['total_642_trend']['changes']:
             ws[f"A{row}"] = f"{change.get('from', '')} → {change.get('to', '')}"
             ws[f"B{row}"] = format_vnd(change.get('prev_value', 0))
             ws[f"C{row}"] = format_vnd(change.get('curr_value', 0))
             ws[f"D{row}"] = format_vnd(change.get('change', 0))
             ws[f"E{row}"] = f"{change.get('pct_change', 0):+.1f}%"
+            ws[f"F{row}"] = change.get('account_breakdown', 'No account breakdown available')
+
             delta = change.get('change', 0)
             fill_color = PatternFill(start_color="FFEBEE" if delta > 0 else "E8F5E8", end_color="FFEBEE" if delta > 0 else "E8F5E8", fill_type="solid") if delta != 0 else None
-            for col in range(1, 6):
+            for col in range(1, 7):  # Now 6 columns instead of 5
                 cell = ws.cell(row=row, column=col)
                 if fill_color:
                     cell.fill = fill_color
