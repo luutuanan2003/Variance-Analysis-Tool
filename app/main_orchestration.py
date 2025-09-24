@@ -9,7 +9,7 @@ import pandas as pd
 from openpyxl import Workbook
 from openpyxl.utils.dataframe import dataframe_to_rows
 
-from .data_utils import DEFAULT_CONFIG
+from .data_utils import DEFAULT_CONFIG, EXCEL_PROCESSING, FILE_PROCESSING
 from .excel_processing import (
     extract_subsidiary_name_from_bytes, process_financial_tab_from_bytes,
     apply_excel_formatting_ws, _add_revenue_analysis_to_sheet
@@ -93,6 +93,38 @@ def process_all_python_mode(
         ws.append(r)
     apply_excel_formatting_ws(ws, anom_df, CONFIG)
 
+    # === ADD CLEANED SHEETS FOR EACH FILE ===
+    print(f"\n📊 Adding cleaned BS and PL sheets...")
+    try:
+        for idx, (fname, xl_bytes) in enumerate(files):
+            sub = extract_subsidiary_name_from_bytes(xl_bytes, fname)
+            file_prefix = f"{sub}_{idx+1}" if len(files) > 1 else sub
+
+            # Add cleaned Balance Sheet
+            try:
+                bs_df, bs_cols = process_financial_tab_from_bytes(xl_bytes, "BS Breakdown", "BS", sub)
+                if not bs_df.empty:
+                    bs_ws = wb.create_sheet(title=f"{file_prefix}_BS_Cleaned"[:CONFIG["max_sheet_name_length"]])
+                    for r in dataframe_to_rows(bs_df, index=False, header=True):
+                        bs_ws.append(r)
+                    print(f"✅ Added cleaned BS sheet for {sub}")
+            except Exception as e:
+                print(f"⚠️  Could not add cleaned BS sheet for {sub}: {e}")
+
+            # Add cleaned Profit & Loss Sheet
+            try:
+                pl_df, pl_cols = process_financial_tab_from_bytes(xl_bytes, "PL Breakdown", "PL", sub)
+                if not pl_df.empty:
+                    pl_ws = wb.create_sheet(title=f"{file_prefix}_PL_Cleaned"[:CONFIG["max_sheet_name_length"]])
+                    for r in dataframe_to_rows(pl_df, index=False, header=True):
+                        pl_ws.append(r)
+                    print(f"✅ Added cleaned PL sheet for {sub}")
+            except Exception as e:
+                print(f"⚠️  Could not add cleaned PL sheet for {sub}: {e}")
+
+    except Exception as e:
+        print(f"⚠️  Error adding cleaned sheets: {e}")
+
     # === ADD REVENUE ANALYSIS SHEET ===
     print(f"\n📊 Adding Revenue Analysis sheet...")
     try:
@@ -146,7 +178,7 @@ def process_all_ai_mode(
 
         print(f"\n📁 ===== PROCESSING FILE {file_idx}/{len(files)} =====\n")
         print(f"📄 File: {fname}")
-        print(f"📏 File Size: {len(xl_bytes):,} bytes ({len(xl_bytes)/1024:.1f} KB)")
+        print(f"📏 File Size: {len(xl_bytes):,} bytes ({len(xl_bytes)/CONFIG['bytes_per_kb']:.1f} KB)")
 
         if progress_callback:
             progress_callback(file_start + 2, f"Extracting subsidiary name from {fname}")
@@ -218,6 +250,38 @@ def process_all_ai_mode(
     print(f"\n🎨 Applying visual formatting to Excel output...")
     apply_excel_formatting_ws(ws, anom_df, CONFIG)
     print(f"✅ Excel formatting applied successfully")
+
+    # === ADD CLEANED SHEETS FOR EACH FILE (AI MODE) ===
+    print(f"\n📊 Adding cleaned BS and PL sheets to AI analysis...")
+    try:
+        for idx, (fname, xl_bytes) in enumerate(files):
+            sub = extract_subsidiary_name_from_bytes(xl_bytes, fname)
+            file_prefix = f"{sub}_{idx+1}" if len(files) > 1 else sub
+
+            # Add cleaned Balance Sheet
+            try:
+                bs_df, bs_cols = process_financial_tab_from_bytes(xl_bytes, "BS Breakdown", "BS", sub)
+                if not bs_df.empty:
+                    bs_ws = wb.create_sheet(title=f"{file_prefix}_BS_Cleaned"[:CONFIG["max_sheet_name_length"]])
+                    for r in dataframe_to_rows(bs_df, index=False, header=True):
+                        bs_ws.append(r)
+                    print(f"✅ Added cleaned BS sheet for {sub}")
+            except Exception as e:
+                print(f"⚠️  Could not add cleaned BS sheet for {sub}: {e}")
+
+            # Add cleaned Profit & Loss Sheet
+            try:
+                pl_df, pl_cols = process_financial_tab_from_bytes(xl_bytes, "PL Breakdown", "PL", sub)
+                if not pl_df.empty:
+                    pl_ws = wb.create_sheet(title=f"{file_prefix}_PL_Cleaned"[:CONFIG["max_sheet_name_length"]])
+                    for r in dataframe_to_rows(pl_df, index=False, header=True):
+                        pl_ws.append(r)
+                    print(f"✅ Added cleaned PL sheet for {sub}")
+            except Exception as e:
+                print(f"⚠️  Could not add cleaned PL sheet for {sub}: {e}")
+
+    except Exception as e:
+        print(f"⚠️  Error adding cleaned sheets to AI analysis: {e}")
 
     # === RETURN BYTES ===
     print(f"\n💾 Generating final Excel file...")

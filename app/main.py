@@ -18,7 +18,7 @@ from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .main_orchestration import process_all
-from .data_utils import DEFAULT_CONFIG
+from .data_utils import DEFAULT_CONFIG, EXCEL_PROCESSING
 from .revenue_analysis import (
     analyze_revenue_impact_from_bytes,
     analyze_comprehensive_revenue_impact_from_bytes,
@@ -258,22 +258,22 @@ async def start_analysis(
                     log_capture.queue.put(f"__PROGRESS__{percentage}__{message}")
 
                 with redirect_stdout(log_capture), redirect_stderr(log_capture):
-                    progress_update(10, "Starting AI variance analysis...")
+                    progress_update(CONFIG["progress_milestones"]["start"], "Starting AI variance analysis...")
                     print("🤖 Starting AI-only variance analysis...")
 
-                    progress_update(15, "Loading Excel files...")
+                    progress_update(CONFIG["progress_milestones"]["load"], "Loading Excel files...")
                     print(f"📤 Loaded {len(files)} Excel files for AI analysis")
 
-                    progress_update(20, "Configuring AI analysis settings...")
+                    progress_update(CONFIG["progress_milestones"]["config"], "Configuring AI analysis settings...")
                     # Use AI-only configuration (no user input needed)
                     CONFIG = {**DEFAULT_CONFIG}
                     CONFIG["use_llm_analysis"] = True  # Force AI mode
                     CONFIG["llm_model"] = "gpt-4o"
 
-                    progress_update(25, "AI determining thresholds and focus areas...")
+                    progress_update(CONFIG["progress_milestones"]["ai_thresholds"], "AI determining thresholds and focus areas...")
                     print("🧠 AI will autonomously determine all thresholds and focus areas")
 
-                    progress_update(30, "Beginning AI analysis of financial data...")
+                    progress_update(CONFIG["progress_milestones"]["analysis_start"], "Beginning AI analysis of financial data...")
                     # Process with AI-only mode
                     xlsx_bytes, debug_files = process_all(
                         files=files,
@@ -281,23 +281,23 @@ async def start_analysis(
                         progress_callback=progress_update
                     )
 
-                    progress_update(85, "AI analysis complete, storing results...")
+                    progress_update(CONFIG["progress_milestones"]["analysis_complete"], "AI analysis complete, storing results...")
                     # Store results for download
                     for debug_name, debug_bytes in debug_files:
                         file_key = f"{session_id}_{debug_name}"
                         debug_files_store[file_key] = (debug_name, debug_bytes)
 
-                    progress_update(90, "Preparing main analysis file...")
+                    progress_update(CONFIG["progress_milestones"]["storage"], "Preparing main analysis file...")
                     # Store main result
                     main_file_key = f"{session_id}_main_result"
                     debug_files_store[main_file_key] = (f"ai_variance_analysis_{session_id}.xlsx", xlsx_bytes)
 
-                    progress_update(95, "Finalizing results...")
+                    progress_update(CONFIG["progress_milestones"]["finalize"], "Finalizing results...")
                     print("✅ AI analysis complete!")
                     if debug_files:
                         print(f"📄 Debug files ready for download")
 
-                    progress_update(100, "Analysis complete - ready for download!")
+                    progress_update(CONFIG["progress_milestones"]["complete"], "Analysis complete - ready for download!")
                     # Signal completion
                     log_capture.queue.put("__ANALYSIS_COMPLETE__")
 
@@ -475,6 +475,7 @@ async def list_debug_files(session_id: str):
             })
 
     return {"session_id": session_id, "files": session_files}
+
 
 # ---------------------------------------------------------------------
 # AI Comprehensive Revenue Impact Analysis endpoint

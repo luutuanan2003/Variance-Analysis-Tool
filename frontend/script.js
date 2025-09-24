@@ -190,6 +190,7 @@ function displayComprehensiveRevenueAnalysis(data) {
     `;
   }
 
+
   // Revenue by Account with Customer Impact Analysis
   if (data.revenue_by_account) {
     html += `
@@ -479,6 +480,7 @@ function displayComprehensiveRevenueAnalysis(data) {
       </div>
     `;
   }
+
 
   console.log("📝 Generated HTML length:", html.length);
   console.log("🎨 Setting innerHTML...");

@@ -7,7 +7,7 @@ import io
 import pandas as pd
 from typing import Dict, List, Any
 
-from .data_utils import DEFAULT_CONFIG
+from .data_utils import DEFAULT_CONFIG, REVENUE_ANALYSIS
 from .excel_processing import extract_subsidiary_name_from_bytes
 
 # Import AI analyzer for AI mode
@@ -28,8 +28,150 @@ def clean_numeric_value(val):
         return float(str(val).replace(',', '').replace(' ', ''))
     except:
         return 0.0
+    
+def _build_total_trend(group_accounts: dict, months: list[str]) -> dict:
+    """
+    Collapse {account: {'monthly_totals': {m: v}, ...}, ...}
+    into a single {'monthly_totals': {...}, 'changes': [...] }.
+    """
+    if not group_accounts:
+        return {'monthly_totals': {}, 'changes': []}
 
-def analyze_comprehensive_revenue_impact_from_bytes(xl_bytes: bytes, filename: str) -> dict:
+    monthly_totals = {m: 0.0 for m in months}
+    for acc in group_accounts.values():
+        mt = acc.get('monthly_totals', {})
+        for m in months:
+            monthly_totals[m] += float(mt.get(m, 0.0))
+
+    changes = []
+    for i in range(1, len(months)):
+        prev_m, curr_m = months[i-1], months[i]
+        prev_val, curr_val = monthly_totals[prev_m], monthly_totals[curr_m]
+        delta = curr_val - prev_val
+        pct = (delta / prev_val * 100.0) if prev_val != 0 else 0.0
+        changes.append({
+            'from': prev_m, 'to': curr_m,
+            'prev_value': prev_val,
+            'curr_value': curr_val,
+            'change': delta,
+            'pct_change': pct
+        })
+    return {'monthly_totals': monthly_totals, 'changes': changes}
+
+
+def _build_total_trend_with_account_explanations(group_accounts: dict, months: list[str]) -> dict:
+    """
+    Enhanced version of _build_total_trend that includes detailed account-level explanations
+    for what drives each VND change in the total trend.
+    """
+    if not group_accounts:
+        return {'monthly_totals': {}, 'changes': [], 'account_explanations': {}}
+
+    monthly_totals = {m: 0.0 for m in months}
+    account_monthly_data = {}
+
+    # Track each account's contribution by month
+    for account_name, account_data in group_accounts.items():
+        account_monthly_data[account_name] = {}
+        mt = account_data.get('monthly_totals', {})
+        for m in months:
+            val = float(mt.get(m, 0.0))
+            account_monthly_data[account_name][m] = val
+            monthly_totals[m] += val
+
+    changes = []
+    account_explanations = {}
+
+    for i in range(1, len(months)):
+        prev_m, curr_m = months[i-1], months[i]
+        prev_val, curr_val = monthly_totals[prev_m], monthly_totals[curr_m]
+        delta = curr_val - prev_val
+        pct = (delta / prev_val * 100.0) if prev_val != 0 else 0.0
+
+        # Calculate each account's contribution to the total change
+        account_contributions = []
+        for account_name, account_months in account_monthly_data.items():
+            account_prev = account_months.get(prev_m, 0.0)
+            account_curr = account_months.get(curr_m, 0.0)
+            account_change = account_curr - account_prev
+
+            if abs(account_change) > 0:  # Only include accounts with changes
+                account_pct_change = (account_change / account_prev * 100.0) if account_prev != 0 else 0.0
+                contribution_to_total_pct = (account_change / abs(delta) * 100.0) if delta != 0 else 0.0
+
+                account_contributions.append({
+                    'account': account_name,
+                    'change': account_change,
+                    'pct_change': account_pct_change,
+                    'prev_value': account_prev,
+                    'curr_value': account_curr,
+                    'contribution_to_total_pct': contribution_to_total_pct
+                })
+
+        # Sort by absolute change amount (largest changes first)
+        account_contributions.sort(key=lambda x: abs(x['change']), reverse=True)
+
+        # Create explanation text
+        period_key = f"{prev_m}_to_{curr_m}"
+        if account_contributions:
+            top_3_accounts = account_contributions[:3]  # Show top 3 contributors
+            explanation_parts = []
+
+            for contrib in top_3_accounts:
+                direction = "increased" if contrib['change'] > 0 else "decreased"
+                explanation_parts.append(
+                    f"• {contrib['account']}: {direction} by {abs(contrib['change']):,.0f} VND "
+                    f"({contrib['pct_change']:+.1f}%, {abs(contrib['contribution_to_total_pct']):.1f}% of total change)"
+                )
+
+            if len(account_contributions) > 3:
+                remaining_change = sum(abs(c['change']) for c in account_contributions[3:])
+                explanation_parts.append(f"• Other {len(account_contributions) - 3} accounts: {remaining_change:,.0f} VND")
+
+            account_explanations[period_key] = {
+                'summary': f"Total change of {delta:+,.0f} VND ({pct:+.1f}%) explained by:",
+                'detailed_breakdown': explanation_parts,
+                'all_account_contributions': account_contributions
+            }
+        else:
+            account_explanations[period_key] = {
+                'summary': f"No significant account changes detected for {delta:+,.0f} VND ({pct:+.1f}%) total change",
+                'detailed_breakdown': [],
+                'all_account_contributions': []
+            }
+
+        # Create account breakdown text for the extra column
+        account_breakdown_text = ""
+        if account_contributions:
+            top_contributors = account_contributions[:3]
+            breakdown_parts = []
+            for contrib in top_contributors:
+                direction = "↑" if contrib['change'] > 0 else "↓"
+                breakdown_parts.append(f"{contrib['account']}: {direction}{abs(contrib['change']):,.0f} VND ({contrib['pct_change']:+.1f}%)")
+
+            if len(account_contributions) > 3:
+                breakdown_parts.append(f"...+{len(account_contributions) - 3} more accounts")
+
+            account_breakdown_text = " | ".join(breakdown_parts)
+
+        changes.append({
+            'from': prev_m, 'to': curr_m,
+            'prev_value': prev_val,
+            'curr_value': curr_val,
+            'change': delta,
+            'pct_change': pct,
+            'account_breakdown': account_breakdown_text,  # New extra column data
+            'account_contributions': account_contributions[:5]  # Top 5 for API response
+        })
+
+    return {
+        'monthly_totals': monthly_totals,
+        'changes': changes,
+        'account_explanations': account_explanations
+    }
+
+
+def analyze_comprehensive_revenue_impact_from_bytes(xl_bytes: bytes, filename: str, CONFIG: dict = DEFAULT_CONFIG) -> dict:
     """
     Comprehensive Revenue Impact Analysis
     Answers specific questions:
@@ -58,11 +200,15 @@ def analyze_comprehensive_revenue_impact_from_bytes(xl_bytes: bytes, filename: s
             return {"error": "Could not find data start row with 'Entity' header"}
 
         # Extract month columns
+        # Replace your month detection block with:
         month_headers = pl_df.iloc[data_start_row + 1].fillna('').astype(str).tolist()
+        MONTH_TOKENS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
         month_cols = []
         for h2 in month_headers:
-            if any(month in str(h2) for month in ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug']):
-                month_cols.append(str(h2).strip())
+            h2s = str(h2)
+            if any(tok in h2s for tok in MONTH_TOKENS):
+                month_cols.append(h2s.strip())
+        # --- End replacement ---
 
         # Extract data
         data_df = pl_df.iloc[data_start_row + 2:].copy()
@@ -80,7 +226,7 @@ def analyze_comprehensive_revenue_impact_from_bytes(xl_bytes: bytes, filename: s
         analysis_result = {
             'subsidiary': subsidiary,
             'filename': filename,
-            'months_analyzed': month_cols[:8],
+            'months_analyzed': month_cols[:CONFIG["months_to_analyze"]],
             'total_revenue_analysis': {},
             'revenue_by_account': {},
             'gross_margin_analysis': {},
@@ -96,13 +242,13 @@ def analyze_comprehensive_revenue_impact_from_bytes(xl_bytes: bytes, filename: s
         # =====================================
 
         total_revenue_by_month = {}
-        for month in month_cols[:8]:
+        for month in month_cols[:CONFIG["months_to_analyze"]]:
             month_total = 0
             for i, row in data_df.iterrows():
                 entity = str(row['Entity']) if 'Entity' in row and pd.notna(row['Entity']) else ''
                 if entity and entity != 'nan' and not entity.startswith('Total'):
                     # Check if under a 511* revenue account
-                    for prev_i in range(max(0, i-10), i):
+                    for prev_i in range(max(0, i-CONFIG["lookback_periods"]), i):
                         if prev_i < len(data_df):
                             prev_desc = str(data_df.iloc[prev_i]['Account_Description']) if pd.notna(data_df.iloc[prev_i]['Account_Description']) else ''
                             if '511' in prev_desc and 'revenue' in prev_desc.lower():
@@ -111,7 +257,7 @@ def analyze_comprehensive_revenue_impact_from_bytes(xl_bytes: bytes, filename: s
                                 break
             total_revenue_by_month[month] = month_total
 
-        # Calculate month-over-month changes
+        # Calculate month-over-month changes (basic version first)
         months = list(total_revenue_by_month.keys())
         total_revenue_changes = []
         for i in range(1, len(months)):
@@ -128,9 +274,11 @@ def analyze_comprehensive_revenue_impact_from_bytes(xl_bytes: bytes, filename: s
                 'prev_value': prev_revenue,
                 'curr_value': curr_revenue,
                 'change': change,
-                'pct_change': pct_change
+                'pct_change': pct_change,
+                'account_breakdown': ''  # Will be populated later after revenue_accounts is built
             })
 
+        # Store initial analysis result - will be enhanced after revenue_accounts is populated
         analysis_result['total_revenue_analysis'] = {
             'monthly_totals': total_revenue_by_month,
             'changes': total_revenue_changes
@@ -153,7 +301,7 @@ def analyze_comprehensive_revenue_impact_from_bytes(xl_bytes: bytes, filename: s
                 if current_account not in revenue_accounts:
                     revenue_accounts[current_account] = {
                         'entities': {},
-                        'monthly_totals': {month: 0 for month in month_cols[:8]}
+                        'monthly_totals': {month: 0 for month in month_cols[:CONFIG["months_to_analyze"]]}
                     }
 
             # Entity data under current account
@@ -161,7 +309,7 @@ def analyze_comprehensive_revenue_impact_from_bytes(xl_bytes: bytes, filename: s
                 if entity not in revenue_accounts[current_account]['entities']:
                     revenue_accounts[current_account]['entities'][entity] = {}
 
-                for month in month_cols[:8]:
+                for month in month_cols[:CONFIG["months_to_analyze"]]:
                     val = clean_numeric_value(row[month])
                     revenue_accounts[current_account]['entities'][entity][month] = val
                     revenue_accounts[current_account]['monthly_totals'][month] += val
@@ -192,13 +340,13 @@ def analyze_comprehensive_revenue_impact_from_bytes(xl_bytes: bytes, filename: s
             biggest_change = max(account_changes, key=lambda x: abs(x['change'])) if account_changes else None
             customer_impacts = []
 
-            if biggest_change and abs(biggest_change['change']) > 1000000:  # > 1M VND
+            if biggest_change and abs(biggest_change['change']) > CONFIG["revenue_change_threshold_vnd"]:
                 for entity, entity_data in data['entities'].items():
                     prev_val = entity_data.get(biggest_change['from'], 0)
                     curr_val = entity_data.get(biggest_change['to'], 0)
                     entity_change = curr_val - prev_val
 
-                    if abs(entity_change) > 100000:  # > 100K VND
+                    if abs(entity_change) > CONFIG["revenue_entity_threshold_vnd"]:
                         customer_impacts.append({
                             'entity': entity,
                             'change': entity_change,
@@ -211,9 +359,32 @@ def analyze_comprehensive_revenue_impact_from_bytes(xl_bytes: bytes, filename: s
 
             revenue_accounts[account]['changes'] = account_changes
             revenue_accounts[account]['biggest_change'] = biggest_change
-            revenue_accounts[account]['customer_impacts'] = customer_impacts[:5]  # Top 5
+            revenue_accounts[account]['customer_impacts'] = customer_impacts[:CONFIG["top_entity_impacts"]]
 
         analysis_result['revenue_by_account'] = revenue_accounts
+
+        # Now that revenue_accounts is built, create enhanced trend analysis with account breakdown
+        revenue_accounts_for_trend = {}
+        for account_name, account_data in revenue_accounts.items():
+            if '511' in account_name:
+                revenue_accounts_for_trend[account_name] = account_data
+
+        # Use enhanced trend analysis for total revenue (511*)
+        enhanced_revenue_trend = _build_total_trend_with_account_explanations(revenue_accounts_for_trend, months)
+
+        # Update the total_revenue_changes with account breakdown info
+        if enhanced_revenue_trend and enhanced_revenue_trend.get('changes'):
+            for i, total_change in enumerate(analysis_result['total_revenue_analysis']['changes']):
+                for period_change in enhanced_revenue_trend['changes']:
+                    if (period_change['from'] == total_change['from'] and
+                        period_change['to'] == total_change['to']):
+                        analysis_result['total_revenue_analysis']['changes'][i]['account_breakdown'] = period_change.get('account_breakdown', '')
+                        break
+
+        # Add enhanced trend data to total_revenue_analysis
+        analysis_result['total_revenue_analysis']['enhanced_trend'] = enhanced_revenue_trend
+        analysis_result['total_revenue_analysis']['account_explanations'] = enhanced_revenue_trend.get('account_explanations', {})
+        analysis_result['total_revenue_analysis']['detailed_account_contributions'] = enhanced_revenue_trend.get('changes', [])
 
         # =====================================
         # 3. GROSS MARGIN ANALYSIS
@@ -232,14 +403,14 @@ def analyze_comprehensive_revenue_impact_from_bytes(xl_bytes: bytes, filename: s
                 if current_cost_account not in cost_accounts:
                     cost_accounts[current_cost_account] = {
                         'entities': {},
-                        'monthly_totals': {month: 0 for month in month_cols[:8]}
+                        'monthly_totals': {month: 0 for month in month_cols[:CONFIG["months_to_analyze"]]}
                     }
 
             elif current_cost_account and entity and entity != 'nan' and not entity.startswith('Total'):
                 if entity not in cost_accounts[current_cost_account]['entities']:
                     cost_accounts[current_cost_account]['entities'][entity] = {}
 
-                for month in month_cols[:8]:
+                for month in month_cols[:CONFIG["months_to_analyze"]]:
                     val = clean_numeric_value(row[month])
                     cost_accounts[current_cost_account]['entities'][entity][month] = val
                     cost_accounts[current_cost_account]['monthly_totals'][month] += val
@@ -264,8 +435,8 @@ def analyze_comprehensive_revenue_impact_from_bytes(xl_bytes: bytes, filename: s
                     prev_gm = gross_margin_trend[i-1]['gross_margin_pct']
                     gm_change = gross_margin_pct - prev_gm
 
-                    if abs(gm_change) > 1:  # > 1% change
-                        risk_level = "HIGH" if gm_change < -2 else "MEDIUM"
+                    if abs(gm_change) > CONFIG["gross_margin_change_threshold_pct"]:
+                        risk_level = "HIGH" if gm_change < CONFIG["high_gross_margin_risk_threshold_pct"] else "MEDIUM"
                         analysis_result['risk_assessment'].append({
                             'type': 'Gross Margin Change',
                             'period': f"{gross_margin_trend[i-1]['month']} → {month}",
@@ -278,6 +449,56 @@ def analyze_comprehensive_revenue_impact_from_bytes(xl_bytes: bytes, filename: s
             'trend': gross_margin_trend,
             'cost_accounts': cost_accounts
         }
+
+        # --- NEW: COGS 632* account analysis (place after cost_accounts is populated) ---
+        cogs_632_accounts = {}
+        for account, data in cost_accounts.items():
+            # only consider true 632* buckets (avoid "Total ..." rows)
+            if account and '632' in account and not account.strip().lower().startswith('total'):
+                months_list = list(data['monthly_totals'].keys())
+                account_changes = []
+                for i in range(1, len(months_list)):
+                    prev_m = months_list[i-1]
+                    curr_m = months_list[i]
+                    prev_val = data['monthly_totals'][prev_m]
+                    curr_val = data['monthly_totals'][curr_m]
+                    delta = curr_val - prev_val
+                    pct = (delta / prev_val * 100.0) if prev_val != 0 else 0.0
+                    account_changes.append({
+                        'from': prev_m, 'to': curr_m,
+                        'change': delta, 'pct_change': pct,
+                        'prev_val': prev_val, 'curr_val': curr_val
+                    })
+
+                # biggest movement period for entity drilldown (lower thresholds than revenue)
+                biggest = max(account_changes, key=lambda x: abs(x['change'])) if account_changes else None
+                entity_impacts = []
+                if biggest and abs(biggest['change']) > CONFIG["cogs_change_threshold_vnd"]:
+                    for entity, entity_months in data.get('entities', {}).items():
+                        prev_v = entity_months.get(biggest['from'], 0.0)
+                        curr_v = entity_months.get(biggest['to'], 0.0)
+                        e_delta = curr_v - prev_v
+                        if abs(e_delta) > CONFIG["cogs_entity_threshold_vnd"]:
+                            entity_impacts.append({
+                                'entity': entity,
+                                'change': e_delta,
+                                'prev_val': prev_v,
+                                'curr_val': curr_v,
+                                'pct_change': (e_delta / prev_v * 100.0) if prev_v != 0 else 0.0
+                            })
+                entity_impacts.sort(key=lambda x: abs(x['change']), reverse=True)
+
+                cogs_632_accounts[account] = {
+                    'monthly_totals': data['monthly_totals'],
+                    'changes': account_changes,
+                    'biggest_change': biggest,
+                    'entity_impacts': entity_impacts[:CONFIG["top_entity_impacts"]],
+                }
+
+        # attach to analysis result so the Excel writer can render it
+        analysis_result['cogs_632_analysis'] = cogs_632_accounts
+
+        analysis_result['total_632_trend'] = _build_total_trend_with_account_explanations(cogs_632_accounts, months)
 
         # =====================================
         # 4. UTILITY ANALYSIS
@@ -337,14 +558,14 @@ def analyze_comprehensive_revenue_impact_from_bytes(xl_bytes: bytes, filename: s
                 if current_sga_641_account not in sga_641_accounts:
                     sga_641_accounts[current_sga_641_account] = {
                         'entities': {},
-                        'monthly_totals': {month: 0 for month in month_cols[:8]}
+                        'monthly_totals': {month: 0 for month in month_cols[:CONFIG["months_to_analyze"]]}
                     }
 
             elif current_sga_641_account and entity and entity != 'nan' and not entity.startswith('Total'):
                 if entity not in sga_641_accounts[current_sga_641_account]['entities']:
                     sga_641_accounts[current_sga_641_account]['entities'][entity] = {}
 
-                for month in month_cols[:8]:
+                for month in month_cols[:CONFIG["months_to_analyze"]]:
                     val = clean_numeric_value(row[month])
                     sga_641_accounts[current_sga_641_account]['entities'][entity][month] = val
                     sga_641_accounts[current_sga_641_account]['monthly_totals'][month] += val
@@ -375,13 +596,13 @@ def analyze_comprehensive_revenue_impact_from_bytes(xl_bytes: bytes, filename: s
             biggest_change = max(account_changes, key=lambda x: abs(x['change'])) if account_changes else None
             entity_impacts = []
 
-            if biggest_change and abs(biggest_change['change']) > 500000:  # > 500K VND
+            if biggest_change and abs(biggest_change['change']) > CONFIG["sga_change_threshold_vnd"]:
                 for entity, entity_data in data['entities'].items():
                     prev_val = entity_data.get(biggest_change['from'], 0)
                     curr_val = entity_data.get(biggest_change['to'], 0)
                     entity_change = curr_val - prev_val
 
-                    if abs(entity_change) > 50000:  # > 50K VND
+                    if abs(entity_change) > CONFIG["sga_entity_threshold_vnd"]:
                         entity_impacts.append({
                             'entity': entity,
                             'change': entity_change,
@@ -394,9 +615,11 @@ def analyze_comprehensive_revenue_impact_from_bytes(xl_bytes: bytes, filename: s
 
             sga_641_accounts[account]['changes'] = account_changes
             sga_641_accounts[account]['biggest_change'] = biggest_change
-            sga_641_accounts[account]['entity_impacts'] = entity_impacts[:5]  # Top 5
+            sga_641_accounts[account]['entity_impacts'] = entity_impacts[:CONFIG["top_entity_impacts"]]
 
         analysis_result['sga_641_analysis'] = sga_641_accounts
+
+        analysis_result['total_641_trend'] = _build_total_trend_with_account_explanations(sga_641_accounts, months)
 
         # =====================================
         # 6. SG&A ANALYSIS (642* Accounts)
@@ -415,14 +638,14 @@ def analyze_comprehensive_revenue_impact_from_bytes(xl_bytes: bytes, filename: s
                 if current_sga_642_account not in sga_642_accounts:
                     sga_642_accounts[current_sga_642_account] = {
                         'entities': {},
-                        'monthly_totals': {month: 0 for month in month_cols[:8]}
+                        'monthly_totals': {month: 0 for month in month_cols[:CONFIG["months_to_analyze"]]}
                     }
 
             elif current_sga_642_account and entity and entity != 'nan' and not entity.startswith('Total'):
                 if entity not in sga_642_accounts[current_sga_642_account]['entities']:
                     sga_642_accounts[current_sga_642_account]['entities'][entity] = {}
 
-                for month in month_cols[:8]:
+                for month in month_cols[:CONFIG["months_to_analyze"]]:
                     val = clean_numeric_value(row[month])
                     sga_642_accounts[current_sga_642_account]['entities'][entity][month] = val
                     sga_642_accounts[current_sga_642_account]['monthly_totals'][month] += val
@@ -453,13 +676,13 @@ def analyze_comprehensive_revenue_impact_from_bytes(xl_bytes: bytes, filename: s
             biggest_change = max(account_changes, key=lambda x: abs(x['change'])) if account_changes else None
             entity_impacts = []
 
-            if biggest_change and abs(biggest_change['change']) > 500000:  # > 500K VND
+            if biggest_change and abs(biggest_change['change']) > CONFIG["sga_change_threshold_vnd"]:
                 for entity, entity_data in data['entities'].items():
                     prev_val = entity_data.get(biggest_change['from'], 0)
                     curr_val = entity_data.get(biggest_change['to'], 0)
                     entity_change = curr_val - prev_val
 
-                    if abs(entity_change) > 50000:  # > 50K VND
+                    if abs(entity_change) > CONFIG["sga_entity_threshold_vnd"]:
                         entity_impacts.append({
                             'entity': entity,
                             'change': entity_change,
@@ -472,9 +695,11 @@ def analyze_comprehensive_revenue_impact_from_bytes(xl_bytes: bytes, filename: s
 
             sga_642_accounts[account]['changes'] = account_changes
             sga_642_accounts[account]['biggest_change'] = biggest_change
-            sga_642_accounts[account]['entity_impacts'] = entity_impacts[:5]  # Top 5
+            sga_642_accounts[account]['entity_impacts'] = entity_impacts[:CONFIG["top_entity_impacts"]]
 
         analysis_result['sga_642_analysis'] = sga_642_accounts
+
+        analysis_result['total_642_trend'] = _build_total_trend_with_account_explanations(sga_642_accounts, months)
 
         # =====================================
         # 7. COMBINED SG&A ANALYSIS (641* + 642*)
@@ -482,7 +707,7 @@ def analyze_comprehensive_revenue_impact_from_bytes(xl_bytes: bytes, filename: s
 
         # Calculate total SG&A expenses by month
         total_sga_by_month = {}
-        for month in month_cols[:8]:
+        for month in month_cols[:CONFIG["months_to_analyze"]]:
             total_641 = sum([account_data['monthly_totals'][month] for account_data in sga_641_accounts.values()])
             total_642 = sum([account_data['monthly_totals'][month] for account_data in sga_642_accounts.values()])
             total_sga_by_month[month] = total_641 + total_642
@@ -509,8 +734,8 @@ def analyze_comprehensive_revenue_impact_from_bytes(xl_bytes: bytes, filename: s
                     prev_ratio = sga_ratio_trend[-2]['sga_ratio_pct']
                     ratio_change = sga_ratio_pct - prev_ratio
 
-                    if abs(ratio_change) > 2:  # > 2% change in SG&A ratio
-                        risk_level = "HIGH" if ratio_change > 3 else "MEDIUM"
+                    if abs(ratio_change) > CONFIG["sga_ratio_change_threshold_pct"]:
+                        risk_level = "HIGH" if ratio_change > CONFIG["high_sga_ratio_threshold_pct"] else "MEDIUM"
                         analysis_result['risk_assessment'].append({
                             'type': 'SG&A Ratio Change',
                             'period': f"{sga_ratio_trend[-2]['month']} → {month}",
@@ -548,7 +773,7 @@ def analyze_comprehensive_revenue_impact_from_bytes(xl_bytes: bytes, filename: s
     except Exception as e:
         return {"error": f"Comprehensive analysis failed: {str(e)}"}
 
-def analyze_revenue_impact_from_bytes(xl_bytes: bytes, filename: str) -> dict:
+def analyze_revenue_impact_from_bytes(xl_bytes: bytes, filename: str, CONFIG: dict = DEFAULT_CONFIG) -> dict:
     """
     Comprehensive revenue impact analysis from Excel bytes
     Returns structured data for frontend display
@@ -575,7 +800,7 @@ def analyze_revenue_impact_from_bytes(xl_bytes: bytes, filename: str) -> dict:
         month_headers = pl_df.iloc[data_start_row + 1].fillna('').astype(str).tolist()
         month_cols = []
         for h2 in month_headers:
-            if any(month in str(h2) for month in ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug']):
+            if any(month in str(h2) for month in ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']):
                 month_cols.append(str(h2).strip())
 
         # Extract data
@@ -593,13 +818,13 @@ def analyze_revenue_impact_from_bytes(xl_bytes: bytes, filename: str) -> dict:
 
         # 1. Calculate total revenue by month
         total_revenue_by_month = {}
-        for month in month_cols[:8]:
+        for month in month_cols[:CONFIG["months_to_analyze"]]:
             month_total = 0
             for i, row in data_df.iterrows():
                 entity = str(row['Entity']) if 'Entity' in row and pd.notna(row['Entity']) else ''
                 if entity and entity != 'nan' and not entity.startswith('Total'):
                     # Check if under a 511* revenue account
-                    for prev_i in range(max(0, i-10), i):
+                    for prev_i in range(max(0, i-CONFIG["lookback_periods"]), i):
                         if prev_i < len(data_df):
                             prev_desc = str(data_df.iloc[prev_i]['Account_Description']) if pd.notna(data_df.iloc[prev_i]['Account_Description']) else ''
                             if '511' in prev_desc and 'revenue' in prev_desc.lower():
@@ -622,7 +847,7 @@ def analyze_revenue_impact_from_bytes(xl_bytes: bytes, filename: str) -> dict:
                 if current_account not in revenue_accounts:
                     revenue_accounts[current_account] = {
                         'entities': {},
-                        'monthly_totals': {month: 0 for month in month_cols[:8]}
+                        'monthly_totals': {month: 0 for month in month_cols[:CONFIG["months_to_analyze"]]}
                     }
 
             # Entity data under current account
@@ -630,7 +855,7 @@ def analyze_revenue_impact_from_bytes(xl_bytes: bytes, filename: str) -> dict:
                 if entity not in revenue_accounts[current_account]['entities']:
                     revenue_accounts[current_account]['entities'][entity] = {}
 
-                for month in month_cols[:8]:
+                for month in month_cols[:CONFIG["months_to_analyze"]]:
                     val = clean_numeric_value(row[month])
                     revenue_accounts[current_account]['entities'][entity][month] = val
                     revenue_accounts[current_account]['monthly_totals'][month] += val
@@ -653,7 +878,8 @@ def analyze_revenue_impact_from_bytes(xl_bytes: bytes, filename: str) -> dict:
                 'prev_value': prev_val,
                 'curr_value': curr_val,
                 'change': change,
-                'pct_change': pct_change
+                'pct_change': pct_change,
+                'account_breakdown': ''  # Empty for basic analysis - could be enhanced later
             })
 
         # 4. Account-level analysis with customer breakdowns
@@ -685,13 +911,13 @@ def analyze_revenue_impact_from_bytes(xl_bytes: bytes, filename: str) -> dict:
                 biggest_change = max(account_changes, key=lambda x: abs(x['change'])) if account_changes else None
                 customer_impacts = []
 
-                if biggest_change and abs(biggest_change['change']) > 1000000:  # > 1M VND
+                if biggest_change and abs(biggest_change['change']) > CONFIG["revenue_change_threshold_vnd"]:
                     for entity, entity_data in data['entities'].items():
                         prev_val = entity_data.get(biggest_change['from'], 0)
                         curr_val = entity_data.get(biggest_change['to'], 0)
                         entity_change = curr_val - prev_val
 
-                        if abs(entity_change) > 100000:  # > 100K VND
+                        if abs(entity_change) > CONFIG["revenue_entity_threshold_vnd"]:
                             customer_impacts.append({
                                 'entity': entity,
                                 'change': entity_change,
@@ -706,7 +932,7 @@ def analyze_revenue_impact_from_bytes(xl_bytes: bytes, filename: str) -> dict:
                     'account': account,
                     'changes': account_changes,
                     'biggest_change': biggest_change,
-                    'customer_impacts': customer_impacts[:5]  # Top 5
+                    'customer_impacts': customer_impacts[:CONFIG["top_entity_impacts"]]
                 })
 
         # 5. Risk analysis and gross margin calculation
@@ -714,8 +940,8 @@ def analyze_revenue_impact_from_bytes(xl_bytes: bytes, filename: str) -> dict:
 
         # Simple gross margin estimation (would need cost data for full analysis)
         for change in total_revenue_changes:
-            if abs(change['pct_change']) > 5:  # > 5% change
-                risk_level = "HIGH" if abs(change['pct_change']) > 20 else "MEDIUM"
+            if abs(change['pct_change']) > CONFIG["revenue_pct_change_risk_threshold"]:
+                risk_level = "HIGH" if abs(change['pct_change']) > CONFIG["high_revenue_pct_change_threshold"] else "MEDIUM"
                 risk_periods.append({
                     'period': f"{change['from']} → {change['to']}",
                     'change': change['change'],

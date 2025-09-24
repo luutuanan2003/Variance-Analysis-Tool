@@ -41,13 +41,11 @@
         noFilesYet: "No files yet.",
         noExcelSelected: "Please choose at least one .xlsx file.",
         response: "Response",
-        downloadThisRun: "Download (this run)",
         gmDropLabel: "gm_drop_threshold_pct",
         gmDropHelp: "Alert when Gross Margin % drops ≥ this (absolute points).",
         depPctLabel: "dep_pct_only_prefixes",
         depPctHelp: "Codes that use %-only rule for depreciation variance.",
         pctNote: "Tip: You can enter 0.05, 5, or 5% — they all mean 5%.",
-        revenueResultsTitle: "Revenue Analysis Results",
         clearLog: "Clear Log",
         // AI Analysis specific
         aiInfoTitle: "🤖 AI-Powered Analysis",
@@ -100,13 +98,11 @@
         noFilesYet: "Chưa có tệp.",
         noExcelSelected: "Vui lòng chọn ít nhất một tệp .xlsx.",
         response: "Phản hồi",
-        downloadThisRun: "Tải xuống (lượt này)",
         gmDropLabel: "Ngưỡng giảm GM (%)",
         gmDropHelp: "Cảnh báo khi GM% giảm ≥ ngưỡng này (điểm % tuyệt đối).",
         depPctLabel: "Mã khấu hao (%-only)",
         depPctHelp: "Các mã áp dụng luật chỉ theo % cho chênh lệch khấu hao.",
         pctNote: "Mẹo: Bạn có thể nhập 0.05, 5 hoặc 5% — đều là 5%.",
-        revenueResultsTitle: "Kết quả phân tích doanh thu",
         clearLog: "Xóa nhật ký",
         // AI Analysis specific - Vietnamese
         aiInfoTitle: "🤖 Phân tích bằng AI",
@@ -287,18 +283,6 @@
           </div>
         </section>
 
-        <!-- RIGHT: download files and revenue analysis results -->
-        <section class="card" aria-labelledby="outputsHdr">
-          <h2 id="outputsHdr" data-i18n="downloadThisRun">Download (this run)</h2>
-          <ul id="pythonFiles" class="files" aria-live="polite"></ul>
-
-          <div class="sep"></div>
-
-          <div id="revenueResults" style="display: none;" class="revenue-results-section">
-            <h3 data-i18n="revenueResultsTitle" class="revenue-results-title">Revenue Analysis Results</h3>
-            <div id="revenueContent" class="revenue-analysis-content"></div>
-          </div>
-        </section>
       </div>
     </div>
 
@@ -516,94 +500,6 @@
 
               responseDiv.innerHTML = "<p>✅ Processing completed! File downloaded.</p>";
               statusSpan.textContent = "Done";
-
-              // NOW RUN REVENUE ANALYSIS AUTOMATICALLY
-              console.log("🔍 Starting automatic revenue analysis...");
-              responseDiv.innerHTML += "<p>🔍 Running revenue analysis...</p>";
-
-              try {
-                // Run comprehensive revenue analysis with the first uploaded file
-                const firstFile = excelInput.files[0];
-                if (firstFile) {
-                  console.log("📊 Running revenue analysis for:", firstFile.name);
-
-                  const revenueFormData = new FormData();
-                  revenueFormData.append("excel_file", firstFile);
-
-                  const revenueResponse = await fetch("/analyze-comprehensive-revenue", {
-                    method: "POST",
-                    body: revenueFormData
-                  });
-
-                  if (revenueResponse.ok) {
-                    const revenueResult = await revenueResponse.json();
-                    console.log("📊 Revenue analysis result:", revenueResult);
-
-                    // FORCE DISPLAY RESULTS - Direct DOM manipulation
-                    const resultsSection = document.getElementById("revenueResults");
-                    const contentDiv = document.getElementById("revenueContent");
-
-                    console.log("🔍 DOM Check:", {
-                      resultsSection: !!resultsSection,
-                      contentDiv: !!contentDiv,
-                      revenueResult: revenueResult
-                    });
-
-                    if (contentDiv && resultsSection) {
-                      console.log("✅ Both DOM elements found, setting content...");
-
-                      contentDiv.innerHTML = `
-                        <div style="border: 2px solid #4caf50; padding: 15px; margin: 10px 0; background: #f9fff9; border-radius: 8px;">
-                          <h4 style="color: #2e7d32; margin: 0 0 10px 0;">📊 Revenue Analysis Results</h4>
-                          <p><strong>Subsidiary:</strong> ${revenueResult.subsidiary || 'N/A'}</p>
-                          <p><strong>Status:</strong> ✅ Analysis Completed Successfully</p>
-                          <p><strong>Accounts Found:</strong> ${revenueResult.summary?.total_accounts || 'N/A'}</p>
-                          <p><strong>Latest Revenue:</strong> ${revenueResult.summary?.total_revenue_latest ? new Intl.NumberFormat('vi-VN').format(Math.round(revenueResult.summary.total_revenue_latest)) + ' VND' : 'N/A'}</p>
-                          <details style="margin-top: 10px;">
-                            <summary style="cursor: pointer; font-weight: bold;">📋 Full Analysis Data</summary>
-                            <pre style="background: #f5f5f5; padding: 10px; border-radius: 5px; overflow: auto; margin-top: 10px; font-size: 12px;">${JSON.stringify(revenueResult, null, 2)}</pre>
-                          </details>
-                        </div>
-                      `;
-
-                      resultsSection.style.display = "block";
-                      resultsSection.style.background = "#fff";
-                      resultsSection.style.border = "3px solid #4caf50";
-                      resultsSection.style.borderRadius = "10px";
-                      resultsSection.style.padding = "10px";
-
-                      console.log("✅ Revenue results displayed successfully!");
-
-                      // Also try the external display function if it exists
-                      if (typeof window.displayComprehensiveRevenueAnalysis === 'function') {
-                        console.log("🎨 Also calling external display function...");
-                        try {
-                          window.displayComprehensiveRevenueAnalysis(revenueResult);
-                        } catch (e) {
-                          console.error("External display function error:", e);
-                        }
-                      }
-                    } else {
-                      console.error("❌ Missing DOM elements:", {
-                        resultsSection: !!resultsSection,
-                        contentDiv: !!contentDiv
-                      });
-                      // Try to show error in response div
-                      responseDiv.innerHTML += `<p>❌ Could not find display elements (resultsSection: ${!!resultsSection}, contentDiv: ${!!contentDiv})</p>`;
-                    }
-
-                    responseDiv.innerHTML += "<p>✅ Revenue analysis completed!</p>";
-                  } else {
-                    const revenueError = await revenueResponse.json();
-                    responseDiv.innerHTML += `<p>⚠️ Revenue analysis failed: ${revenueError.error}</p>`;
-                  }
-                } else {
-                  responseDiv.innerHTML += "<p>⚠️ No file available for revenue analysis</p>";
-                }
-              } catch (revenueError) {
-                console.error("Revenue analysis error:", revenueError);
-                responseDiv.innerHTML += `<p>⚠️ Revenue analysis failed: ${revenueError.message}</p>`;
-              }
 
             } else {
               const errorData = await response.json();

@@ -1035,7 +1035,7 @@ You will analyze COMPLETE RAW EXCEL DATA to provide the same depth of analysis a
    - Focus on entities with significant value changes
 
 3. PERIOD IDENTIFICATION: Find all available month columns:
-   - Extract ALL month column headers (Jan, Feb, Mar, Apr, May, Jun, Jul, Aug)
+   - Extract ALL month column headers (Jan, Feb, Mar, Apr, May, Jun, Jul, Aug, Sep, Oct, Nov, Dec)
    - Use actual period names from the Excel headers
    - Track up to 8 months of data for trend analysis
    - Calculate month-over-month changes across the full timeline

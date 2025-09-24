@@ -13,7 +13,74 @@ import pandas as pd
 
 warnings.filterwarnings("ignore")  # Avoid noisy pandas dtype warnings in logs
 
-# === Accounting thresholds (centralized) ===
+# =====================================================================================
+# CENTRALIZED CONFIGURATION - All tunable numbers in one place
+# =====================================================================================
+
+# === Revenue Analysis Thresholds ===
+REVENUE_ANALYSIS = {
+    # Revenue account analysis
+    "revenue_change_threshold_vnd": 1_000_000,          # > 1M VND changes are significant
+    "revenue_entity_threshold_vnd": 100_000,            # > 100K VND entity changes are tracked
+    "revenue_account_prefixes": ["511"],                # Revenue account codes
+
+    # COGS analysis (632* accounts)
+    "cogs_change_threshold_vnd": 500_000,               # > 500K VND COGS changes are significant
+    "cogs_entity_threshold_vnd": 50_000,                # > 50K VND COGS entity changes are tracked
+    "cogs_account_prefixes": ["632"],                   # COGS account codes
+
+    # SG&A analysis (641* and 642* accounts)
+    "sga_change_threshold_vnd": 500_000,                # > 500K VND SG&A changes are significant
+    "sga_entity_threshold_vnd": 50_000,                 # > 50K VND SG&A entity changes are tracked
+    "sga_641_account_prefixes": ["641"],                # SG&A 641 account codes
+    "sga_642_account_prefixes": ["642"],                # SG&A 642 account codes
+
+    # Risk assessment thresholds
+    "gross_margin_change_threshold_pct": 1.0,           # > 1% gross margin change triggers risk
+    "high_gross_margin_risk_threshold_pct": -2.0,       # < -2% gross margin change = HIGH risk
+    "sga_ratio_change_threshold_pct": 2.0,              # > 2% SG&A ratio change triggers risk
+    "high_sga_ratio_threshold_pct": 3.0,                # > 3% SG&A ratio change = HIGH risk
+    "revenue_pct_change_risk_threshold": 5.0,           # > 5% revenue change = risk
+    "high_revenue_pct_change_threshold": 20.0,          # > 20% revenue change = HIGH risk
+
+    # Analysis parameters
+    "months_to_analyze": 8,                             # Number of months to analyze
+    "top_entity_impacts": 5,                            # Top N entity impacts to show
+    "lookback_periods": 10,                             # Periods to look back for account detection
+}
+
+# === Excel Processing Constants ===
+EXCEL_PROCESSING = {
+    "max_sheet_name_length": 31,                        # Excel sheet name character limit
+    "header_scan_rows": 40,                             # Rows to scan for header detection
+    "data_row_offset": 2,                               # Offset from header to data rows
+    "account_code_min_digits": 4,                       # Minimum digits in account codes
+    "progress_milestones": {
+        "start": 10,
+        "load": 15,
+        "config": 20,
+        "ai_thresholds": 25,
+        "analysis_start": 30,
+        "analysis_complete": 85,
+        "storage": 90,
+        "finalize": 95,
+        "complete": 100
+    }
+}
+
+# === File Processing Constants ===
+FILE_PROCESSING = {
+    "bytes_per_kb": 1024,                               # Bytes to KB conversion
+    "progress_file_range": 50,                          # Progress range per file (30% to 80%)
+    "progress_base_start": 30,                          # Base progress start percentage
+    "file_progress_offset": {
+        "extract": 2,
+        "analysis": 5,
+        "complete": 5
+    }
+}
+
+# === Accounting Thresholds (Legacy - keep for backward compatibility) ===
 ACCT_THRESH = {
     # the % change in gross margin compared to another period
     # (last month, last year, or budget).
@@ -82,7 +149,8 @@ def _series_hist_pct_of_rev(series: pd.Series, rev: pd.Series) -> tuple[float, f
 
 def _months(df: pd.DataFrame) -> list[str]:
     # Assumes your pipeline already normalized to monthly columns like 'Jan 2025' ... 'Dec 2025'
-    return [c for c in df.columns if isinstance(c, str) and c.strip().lower().endswith(("2024", "2025", "2026", "2027", "2028", "2029", "2030"))]
+    year_range = DEFAULT_CONFIG.get("year_range", ["2024", "2025", "2026", "2027", "2028", "2029", "2030"])
+    return [c for c in df.columns if isinstance(c, str) and c.strip().lower().endswith(tuple(year_range))]
 
 # === Output record helper ===
 def _anom_record(rule: str, entity: str, account: str, month: str, value, detail: dict) -> dict:
@@ -101,6 +169,7 @@ def _anom_record(rule: str, entity: str, account: str, month: str, value, detail
 # -----------------------------------------------------------------------------
 
 DEFAULT_CONFIG: dict = {
+    # ========== Core Analysis Thresholds ==========
     # if an error or difference is bigger than this, it matters; if smaller, we can ignore it.
     "materiality_vnd": 1_000_000_000,      # absolute VND change threshold
     # the % cut-off used to decide if recurring revenue or costs are large enough (vs. total) to count as meaningful.
@@ -119,9 +188,34 @@ DEFAULT_CONFIG: dict = {
     "dep_pct_only_prefixes": ["217", "632"],  # treat these as %-only rules
     # list of keywords to identify a "customer" column in the P&L data.
     "customer_column_hints": ["customer", "khách", "khach", "client", "buyer", "entity", "company", "subsidiary", "parent company", "bwid", "vc1", "vc2", "vc3", "logistics"],  # for 511* drilldown
+
+    # ========== Revenue Analysis Configuration ==========
+    # Include all revenue analysis thresholds
+    **REVENUE_ANALYSIS,
+
+    # ========== Excel Processing Configuration ==========
+    # Include all excel processing constants
+    **EXCEL_PROCESSING,
+
+    # ========== File Processing Configuration ==========
+    # Include all file processing constants
+    **FILE_PROCESSING,
+
+    # ========== Legacy Accounting Thresholds ==========
+    # Include legacy thresholds for backward compatibility
+    **ACCT_THRESH,
+
+    # ========== AI Analysis Configuration ==========
     # AI-specific configuration
     "use_llm_analysis": False,              # Whether to use AI analysis
     "llm_model": "gpt-4o",                  # LLM model for AI analysis
+
+    # ========== Data Processing Constants ==========
+    "year_range": ["2024", "2025", "2026", "2027", "2028", "2029", "2030"],  # Valid year suffixes for month detection
+    "trend_window_max": 5,                  # Maximum trend window periods
+    "zero_division_replacement": 0.0,       # Value to use when dividing by zero
+    "numeric_fill_value": 0.0,              # Fill value for coerced numeric columns
+    "percentage_multiplier": 100.0,         # Convert decimal to percentage
 }
 
 MONTHS = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"]
@@ -205,14 +299,14 @@ def month_key(label: object) -> tuple[int, int]:
 def detect_header_row(xl_bytes: bytes, sheet: str) -> int:
     """Heuristically find the header row by scanning first ~40 rows for 'Financial row'."""
     try:
-        probe = pd.read_excel(io.BytesIO(xl_bytes), sheet_name=sheet, header=None, nrows=40)
+        probe = pd.read_excel(io.BytesIO(xl_bytes), sheet_name=sheet, header=None, nrows=DEFAULT_CONFIG.get("header_scan_rows", 40))
         for i in range(len(probe)):
             row_values = probe.iloc[i].astype(str).str.strip().str.lower()
             if any("financial row" in v for v in row_values):
                 return i
     except Exception:
         pass
-    return 0  # fallback to first row
+    return DEFAULT_CONFIG.get("zero_division_replacement", 0)  # fallback to first row
 
 def normalize_financial_col(df: pd.DataFrame) -> pd.DataFrame:
     """Ensure the main descriptor column is exactly 'Financial row'."""
@@ -222,7 +316,7 @@ def normalize_financial_col(df: pd.DataFrame) -> pd.DataFrame:
     # Otherwise assume first column is the descriptor
     return df.rename(columns={df.columns[0]: "Financial row"})
 
-def promote_row8(df: pd.DataFrame, mode: str, sub: str) -> tuple[pd.DataFrame, list[str]]:
+def promote_row8(df: pd.DataFrame, mode: str = None, sub: str = None) -> tuple[pd.DataFrame, list[str]]:
     """Use the first data row as headers when period info is there; normalize month columns."""
     if len(df) < 1:
         return df, []
@@ -250,8 +344,9 @@ def fill_down_assign(df: pd.DataFrame) -> pd.DataFrame:
     """Extract account code / name from descriptor and forward-fill."""
     ser = df["Financial row"].astype(str)
 
-    code_extract = ser.str.extract(r'(\d{4,})', expand=False)
-    name_extract = ser.str.replace(r'.*?(\d{4,})\s*[-:]*\s*', '', regex=True).str.strip()
+    min_digits = DEFAULT_CONFIG.get("account_code_min_digits", 4)
+    code_extract = ser.str.extract(rf'(\d{{{min_digits},}})', expand=False)
+    name_extract = ser.str.replace(rf'.*?(\d{{{min_digits},}})\s*[-:]*\s*', '', regex=True).str.strip()
 
     row_has_code     = code_extract.notna()
     is_total_word    = ser.str.strip().str.lower().str.startswith(("total","subtotal","cộng","tong","tổng"))
@@ -281,7 +376,7 @@ def coerce_numeric(df: pd.DataFrame, month_cols: list[str]) -> pd.DataFrame:
                 .str.replace(r"\((.*)\)", r"-\1", regex=True)  # (100) -> -100
                 .str.replace(r"[^0-9\.\-]", "", regex=True)
             )
-            out[c] = pd.to_numeric(series, errors="coerce").fillna(0.0)
+            out[c] = pd.to_numeric(series, errors="coerce").fillna(DEFAULT_CONFIG.get("numeric_fill_value", 0.0))
     return out
 
 def aggregate_totals(df: pd.DataFrame, month_cols: list[str]) -> pd.DataFrame:
@@ -333,12 +428,12 @@ def compute_mom_with_trends(df: pd.DataFrame, month_cols: list[str], CONFIG: dic
         tmp = df[["Account Code","Account Name", prev, cur]].copy()
         tmp = tmp.rename(columns={prev: "Prior", cur: "Current"})
         tmp["Delta"] = tmp["Current"] - tmp["Prior"]
-        tmp["Pct Change"] = np.where(tmp["Prior"] == 0, np.nan, tmp["Delta"] / tmp["Prior"])
+        tmp["Pct Change"] = np.where(tmp["Prior"] == CONFIG.get("zero_division_replacement", 0.0), np.nan, tmp["Delta"] / tmp["Prior"])
         tmp["Period"] = normalize_period_label(cur)
 
         # simple trend window using preceding up-to-5 periods (require min_trend_periods)
         if i >= CONFIG["min_trend_periods"]:
-            start_idx = max(0, i - 5)
+            start_idx = max(0, i - CONFIG.get("trend_window_max", 5))
             trend_cols = month_cols[start_idx:i]
             if len(trend_cols) >= CONFIG["min_trend_periods"]:
                 trend_data = df[trend_cols]

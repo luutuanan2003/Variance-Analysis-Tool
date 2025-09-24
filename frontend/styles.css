@@ -90,8 +90,95 @@ main {
   grid-template-columns: 1fr;
 }
 
+/* Python tab - FORCE single centered column layout */
+#python-tab .tab-layout {
+  display: flex !important;
+  justify-content: center !important;
+  align-items: flex-start !important;
+  flex-direction: column !important;
+  padding: 40px !important;
+  width: 100% !important;
+  min-height: 500px !important;
+  grid-template-columns: none !important;
+  grid-template-rows: none !important;
+  margin: 0 auto !important;
+  max-width: 1400px !important;
+}
+
+#python-tab .tab-layout .card {
+  max-width: 900px !important;
+  width: 100% !important;
+  margin: 0 auto !important;
+  box-shadow: 0 12px 40px rgba(0,0,0,.15) !important;
+  border-radius: 20px !important;
+  position: relative !important;
+  left: auto !important;
+  right: auto !important;
+  transform: none !important;
+}
+
+/* Override any grid or flex positioning */
+#python-tab .tab-layout > * {
+  flex: none !important;
+  grid-column: unset !important;
+  grid-row: unset !important;
+  align-self: center !important;
+}
+
+/* Remove any potential left/right margins or positioning */
+#python-tab .tab-layout .card {
+  margin-left: auto !important;
+  margin-right: auto !important;
+  float: none !important;
+  position: relative !important;
+}
+
+/* Responsive adjustments for Python tab */
+@media (max-width: 768px) {
+  #python-tab .tab-layout {
+    padding: 20px !important;
+    min-height: 400px !important;
+  }
+
+  #python-tab .tab-layout .card {
+    max-width: 100% !important;
+    border-radius: 16px !important;
+    margin: 0 !important;
+  }
+}
+
+/* Larger screens - keep card size reasonable */
+@media (min-width: 1200px) {
+  #python-tab .tab-layout {
+    padding: 60px 40px !important;
+  }
+
+  #python-tab .tab-layout .card {
+    max-width: 1000px !important;
+  }
+}
+
+@media (min-width: 1600px) {
+  #python-tab .tab-layout .card {
+    max-width: 1100px !important;
+  }
+}
+
+/* Force center alignment with flexbox centering */
+#python-tab .tab-layout {
+  align-items: center !important;
+  justify-items: center !important;
+}
+
+/* AI tab - keep two column layout */
+#ai-tab .tab-layout {
+  display: grid;
+  gap: 24px;
+  grid-template-columns: 1fr;
+}
+
 @media (min-width: 768px){
-  .tab-layout {
+  #ai-tab .tab-layout {
     grid-template-columns: 2fr 1fr;
     padding: 32px 0;
   }
@@ -101,7 +188,7 @@ main {
     max-width: 1800px;
     padding: 40px;
   }
-  .tab-layout {
+  #ai-tab .tab-layout {
     grid-template-columns: 2.5fr 1fr;
   }
 }
@@ -109,7 +196,7 @@ main {
   main {
     max-width: 2200px;
   }
-  .tab-layout {
+  #ai-tab .tab-layout {
     grid-template-columns: 3fr 1fr;
   }
 }
@@ -117,7 +204,7 @@ main {
   main {
     max-width: 2600px;
   }
-  .tab-layout {
+  #ai-tab .tab-layout {
     grid-template-columns: 4fr 1fr;
   }
 }
@@ -1084,3 +1171,4 @@ a:hover { text-decoration:underline; }
 .revenue-analysis-content::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
 }
+
