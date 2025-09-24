@@ -7,8 +7,12 @@ import pandas as pd
 from openai import OpenAI
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
-load_dotenv()
+# Load environment variables from .env file in project root
+import pathlib
+project_root = pathlib.Path(__file__).parent.parent  # Go up from app/ to project root
+env_path = project_root / ".env"
+load_dotenv(dotenv_path=env_path)  # Load from project root
+load_dotenv()  # Fallback to default behavior
 
 
 class LLMFinancialAnalyzer:
@@ -21,6 +25,14 @@ class LLMFinancialAnalyzer:
         # Get OpenAI configuration from environment
         self.openai_model = os.getenv("OPENAI_MODEL", "gpt-4o")
         self.openai_api_key = os.getenv("OPENAI_API_KEY")
+
+        # Debug: Show if API key was loaded
+        if self.openai_api_key:
+            print(f"✅ OpenAI API key loaded: {self.openai_api_key[:10]}...{self.openai_api_key[-4:]}")
+        else:
+            print("❌ OpenAI API key not found in environment variables")
+            print(f"🔍 .env file path: {env_path}")
+            print(f"🔍 .env file exists: {env_path.exists()}")
 
         if not self.openai_api_key or self.openai_api_key == "your_openai_api_key_here":
             raise ValueError(

@@ -17,7 +17,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from .core import process_all, DEFAULT_CONFIG, analyze_revenue_impact_from_bytes, analyze_comprehensive_revenue_impact_from_bytes, analyze_comprehensive_revenue_impact_ai
+from .main_orchestration import process_all
+from .data_utils import DEFAULT_CONFIG
+from .revenue_analysis import (
+    analyze_revenue_impact_from_bytes,
+    analyze_comprehensive_revenue_impact_from_bytes,
+    analyze_comprehensive_revenue_impact_ai
+)
 
 # ---------------------------------------------------------------------
 # App initialization
