@@ -7,8 +7,8 @@ import io
 import pandas as pd
 from typing import Dict, List, Any
 
-from .data_utils import DEFAULT_CONFIG, REVENUE_ANALYSIS
-from .excel_processing import extract_subsidiary_name_from_bytes
+from ..data.data_utils import DEFAULT_CONFIG, REVENUE_ANALYSIS
+from ..data.excel_processing import extract_subsidiary_name_from_bytes
 
 # Import AI analyzer for AI mode
 try:

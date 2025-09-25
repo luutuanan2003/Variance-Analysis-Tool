@@ -7,7 +7,7 @@ import re
 import pandas as pd
 import numpy as np
 
-from .data_utils import _months
+from ..data.data_utils import _months
 from .anomaly_detection import (
     check_gross_margin, check_depreciation_variance, check_cogs_vs_revenue_ratio,
     check_sga_as_pct_of_revenue, check_financial_items_swings, check_bs_pl_dep_consistency

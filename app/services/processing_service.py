@@ -1,5 +1,5 @@
-# app/main_orchestration.py
-"""Main orchestration functions for processing files and generating Excel output."""
+# app/services/processing_service.py
+"""Core processing service for financial analysis and Excel report generation."""
 
 from __future__ import annotations
 
@@ -9,14 +9,14 @@ import pandas as pd
 from openpyxl import Workbook
 from openpyxl.utils.dataframe import dataframe_to_rows
 
-from .data_utils import DEFAULT_CONFIG, EXCEL_PROCESSING, FILE_PROCESSING
-from .excel_processing import (
+from ..data.data_utils import DEFAULT_CONFIG, EXCEL_PROCESSING, FILE_PROCESSING
+from ..data.excel_processing import (
     extract_subsidiary_name_from_bytes, process_financial_tab_from_bytes,
     apply_excel_formatting_ws, _add_revenue_analysis_to_sheet
 )
-from .anomaly_detection import build_anoms_python_mode, build_anoms_ai_mode
-from .revenue_analysis import analyze_comprehensive_revenue_impact_from_bytes, analyze_revenue_variance_comprehensive
-from .revenue_variance_excel import _add_revenue_variance_analysis_to_sheet
+from ..analysis.anomaly_detection import build_anoms_python_mode, build_anoms_ai_mode
+from ..analysis.revenue_analysis import analyze_comprehensive_revenue_impact_from_bytes, analyze_revenue_variance_comprehensive
+from ..analysis.revenue_variance_excel import _add_revenue_variance_analysis_to_sheet
 
 def process_all(
     files: list[tuple[str, bytes]],
