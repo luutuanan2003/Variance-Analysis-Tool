@@ -140,4 +140,5 @@ def get_settings() -> Settings:
 @lru_cache()
 def get_analysis_config() -> dict:
     """Get cached analysis configuration."""
-    return AnalysisConfig.DEFAULT_CONFIG.copy()
+    from ..data.data_utils import DEFAULT_CONFIG
+    return DEFAULT_CONFIG.copy()

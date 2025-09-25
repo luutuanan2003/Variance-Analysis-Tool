@@ -181,6 +181,25 @@ async def process_legacy(
         settings=get_settings()
     )
 
+# Add backward compatibility for AI analysis endpoints
+@app.post("/start_analysis")
+async def start_analysis_legacy(excel_files: List[UploadFile] = File(...)):
+    """Legacy /start_analysis endpoint - redirects to /api/start-analysis."""
+    from .api.analysis import start_ai_analysis
+    return await start_ai_analysis(excel_files)
+
+@app.get("/logs/{session_id}")
+async def logs_legacy(session_id: str):
+    """Legacy /logs/{session_id} endpoint - redirects to /api/logs/{session_id}."""
+    from .api.analysis import stream_logs
+    return await stream_logs(session_id)
+
+@app.get("/download/{session_id}")
+async def download_legacy(session_id: str):
+    """Legacy /download/{session_id} endpoint - redirects to /api/download/{session_id}."""
+    from .api.analysis import download_main_result
+    return await download_main_result(session_id)
+
 if __name__ == "__main__":
     import uvicorn
     settings = get_settings()
