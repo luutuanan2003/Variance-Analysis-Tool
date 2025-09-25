@@ -15,7 +15,8 @@ from .excel_processing import (
     apply_excel_formatting_ws, _add_revenue_analysis_to_sheet
 )
 from .anomaly_detection import build_anoms_python_mode, build_anoms_ai_mode
-from .revenue_analysis import analyze_comprehensive_revenue_impact_from_bytes
+from .revenue_analysis import analyze_comprehensive_revenue_impact_from_bytes, analyze_revenue_variance_comprehensive
+from .revenue_variance_excel import _add_revenue_variance_analysis_to_sheet
 
 def process_all(
     files: list[tuple[str, bytes]],
@@ -125,18 +126,29 @@ def process_all_python_mode(
     except Exception as e:
         print(f"⚠️  Error adding cleaned sheets: {e}")
 
-    # === ADD REVENUE ANALYSIS SHEET ===
-    print(f"\n📊 Adding Revenue Analysis sheet...")
+    # === ADD REVENUE VARIANCE ANALYSIS SHEET ===
+    print(f"\n📊 Adding Revenue Variance Analysis sheet...")
     try:
-        # Run revenue analysis for the first file
+        # Run comprehensive revenue variance analysis for the first file
         if files:
             first_file_name, first_file_bytes = files[0]
-            revenue_analysis = analyze_comprehensive_revenue_impact_from_bytes(first_file_bytes, first_file_name)
 
-            # Create revenue analysis sheet
-            rev_ws = wb.create_sheet(title="Revenue Analysis")
-            _add_revenue_analysis_to_sheet(rev_ws, revenue_analysis)
-            print(f"✅ Revenue Analysis sheet added successfully")
+            # Use the new comprehensive variance analysis
+            print("🚀 Running new comprehensive revenue variance analysis...")
+            variance_analysis = analyze_revenue_variance_comprehensive(first_file_bytes, first_file_name, CONFIG)
+
+            # Create revenue variance analysis sheet
+            rev_ws = wb.create_sheet(title="Revenue Variance Analysis")
+            _add_revenue_variance_analysis_to_sheet(rev_ws, variance_analysis)
+            print(f"✅ Revenue Variance Analysis sheet added successfully")
+
+            # Also add the legacy analysis for comparison
+            print("📊 Adding legacy revenue analysis for comparison...")
+            legacy_analysis = analyze_comprehensive_revenue_impact_from_bytes(first_file_bytes, first_file_name, CONFIG)
+            legacy_ws = wb.create_sheet(title="Legacy Revenue Analysis")
+            _add_revenue_analysis_to_sheet(legacy_ws, legacy_analysis)
+            print(f"✅ Legacy Revenue Analysis sheet added successfully")
+
     except Exception as e:
         print(f"⚠️  Revenue Analysis sheet creation failed: {e}")
         # Continue without revenue analysis if it fails

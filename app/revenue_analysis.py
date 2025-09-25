@@ -28,7 +28,566 @@ def clean_numeric_value(val):
         return float(str(val).replace(',', '').replace(' ', ''))
     except:
         return 0.0
-    
+
+def fill_down_accounts(df: pd.DataFrame, account_col: str = 'Account_Description') -> pd.DataFrame:
+    """
+    Implement fill-down function for Column A (revenue accounts).
+    Forward-fills account descriptions when cells are empty.
+    """
+    df = df.copy()
+
+    # Forward fill the account column to handle merged cells
+    if account_col in df.columns:
+        # Only fill down if the cell is empty/NaN but not if it contains data
+        mask = df[account_col].isna() | (df[account_col].astype(str).str.strip() == '')
+        df.loc[mask, account_col] = df[account_col].ffill()
+
+    return df
+
+def identify_contribution_accounts(df: pd.DataFrame, contribution_col: str = 'Account_Code') -> pd.DataFrame:
+    """
+    Identify revenue accounts that have '01' in the contribution column (Column C).
+    These represent the actual revenue contribution accounts.
+    """
+    df = df.copy()
+
+    if contribution_col in df.columns:
+        # Mark rows where contribution code is '01'
+        df['Is_Revenue_Contribution'] = df[contribution_col].astype(str).str.strip() == '01'
+    else:
+        df['Is_Revenue_Contribution'] = False
+
+    return df
+
+def calculate_total_revenue_excluding_base(df: pd.DataFrame, month_cols: List[str],
+                                         account_col: str = 'Account_Description',
+                                         contribution_col: str = 'Account_Code',
+                                         entity_col: str = 'Entity') -> dict:
+    """
+    Calculate total revenue excluding 511000000 (Revenue from sale and service provider).
+    Only include accounts with '01' in contribution column (Column C).
+    """
+    # Filter for revenue accounts (511*) with contribution code '01'
+    revenue_mask = (
+        df[account_col].astype(str).str.contains('511', na=False) &
+        (df[contribution_col].astype(str).str.strip() == '01') &
+        ~df[account_col].astype(str).str.contains('511000000', na=False)  # Exclude base revenue
+    )
+
+    revenue_df = df[revenue_mask].copy()
+
+    # Calculate monthly totals
+    monthly_totals = {}
+    for month in month_cols:
+        if month in revenue_df.columns:
+            monthly_totals[month] = revenue_df[month].sum()
+        else:
+            monthly_totals[month] = 0.0
+
+    return {
+        'monthly_totals': monthly_totals,
+        'contributing_accounts': revenue_df[[account_col, entity_col] + month_cols].to_dict('records')
+    }
+
+def analyze_month_over_month_variance(monthly_totals: dict) -> List[dict]:
+    """
+    Perform month-by-month variance analysis for total revenue changes.
+
+    Args:
+        monthly_totals: Dictionary with months as keys and revenue totals as values
+
+    Returns:
+        List of variance analysis dictionaries for each month-to-month change
+    """
+    months = list(monthly_totals.keys())
+    variance_analysis = []
+
+    for i in range(1, len(months)):
+        prev_month = months[i-1]
+        curr_month = months[i]
+        prev_value = monthly_totals[prev_month]
+        curr_value = monthly_totals[curr_month]
+
+        # Calculate variance
+        absolute_change = curr_value - prev_value
+        percentage_change = (absolute_change / prev_value * 100) if prev_value != 0 else 0
+
+        variance_analysis.append({
+            'period_from': prev_month,
+            'period_to': curr_month,
+            'previous_revenue': prev_value,
+            'current_revenue': curr_value,
+            'absolute_change': absolute_change,
+            'percentage_change': percentage_change,
+            'change_direction': 'Increase' if absolute_change > 0 else 'Decrease' if absolute_change < 0 else 'No Change'
+        })
+
+    return variance_analysis
+
+def analyze_revenue_stream_contributions(df: pd.DataFrame, month_cols: List[str],
+                                       account_col: str = 'Account_Description',
+                                       contribution_col: str = 'Account_Code',
+                                       entity_col: str = 'Entity') -> dict:
+    """
+    Identify which revenue streams cause changes between months.
+    Focus on accounts with '01' contribution code.
+
+    Args:
+        df: DataFrame with revenue data
+        month_cols: List of month column names
+        account_col: Column name for account descriptions
+        contribution_col: Column name for contribution codes
+        entity_col: Column name for vendor/customer entities
+
+    Returns:
+        Dictionary with revenue stream analysis by account
+    """
+    # Filter for contributing revenue accounts (511* with '01' code, excluding 511000000)
+    revenue_mask = (
+        df[account_col].astype(str).str.contains('511', na=False) &
+        (df[contribution_col].astype(str).str.strip() == '01') &
+        ~df[account_col].astype(str).str.contains('511000000', na=False)
+    )
+
+    revenue_df = df[revenue_mask].copy()
+
+    # Group by account to analyze each revenue stream
+    revenue_streams = {}
+
+    for account in revenue_df[account_col].unique():
+        if pd.isna(account):
+            continue
+
+        account_data = revenue_df[revenue_df[account_col] == account].copy()
+
+        # Calculate monthly totals for this account
+        monthly_totals = {}
+        for month in month_cols:
+            if month in account_data.columns:
+                monthly_totals[month] = account_data[month].sum()
+            else:
+                monthly_totals[month] = 0.0
+
+        # Calculate month-over-month changes for this stream
+        month_changes = []
+        months = list(monthly_totals.keys())
+
+        for i in range(1, len(months)):
+            prev_month = months[i-1]
+            curr_month = months[i]
+            prev_value = monthly_totals[prev_month]
+            curr_value = monthly_totals[curr_month]
+
+            absolute_change = curr_value - prev_value
+            percentage_change = (absolute_change / prev_value * 100) if prev_value != 0 else 0
+
+            month_changes.append({
+                'period_from': prev_month,
+                'period_to': curr_month,
+                'previous_value': prev_value,
+                'current_value': curr_value,
+                'absolute_change': absolute_change,
+                'percentage_change': percentage_change
+            })
+
+        # Store entities/vendors for this account
+        entities_data = []
+        for _, row in account_data.iterrows():
+            entity = row[entity_col] if entity_col in row and pd.notna(row[entity_col]) else 'Unknown'
+            entity_monthly_values = {}
+            for month in month_cols:
+                if month in row:
+                    entity_monthly_values[month] = row[month]
+
+            entities_data.append({
+                'entity': entity,
+                'monthly_values': entity_monthly_values
+            })
+
+        revenue_streams[account] = {
+            'monthly_totals': monthly_totals,
+            'month_changes': month_changes,
+            'entities': entities_data,
+            'total_entities': len(entities_data)
+        }
+
+    return revenue_streams
+
+def analyze_vendor_customer_impact(revenue_streams: dict, significance_threshold: float = 100000) -> dict:
+    """
+    Drill down to specific vendors/customers causing changes within each revenue stream.
+    Shows net effect analysis: how positive and negative contributions combine to reach total delta.
+
+    Args:
+        revenue_streams: Dictionary from analyze_revenue_stream_contributions
+        significance_threshold: Minimum change amount to be considered significant (VND)
+
+    Returns:
+        Dictionary with vendor/customer impact analysis including net effect breakdown
+    """
+    vendor_impact_analysis = {}
+
+    for account, stream_data in revenue_streams.items():
+        entities = stream_data['entities']
+        month_changes = stream_data['month_changes']
+
+        # For each month-to-month change period, identify contributing entities
+        period_impacts = []
+
+        for change_period in month_changes:
+            prev_month = change_period['period_from']
+            curr_month = change_period['period_to']
+            total_change = change_period['absolute_change']
+
+            # Calculate entity-level contributions for this period
+            entity_contributions = []
+            positive_contributors = []
+            negative_contributors = []
+
+            for entity_data in entities:
+                entity_name = entity_data['entity']
+                monthly_values = entity_data['monthly_values']
+
+                prev_value = monthly_values.get(prev_month, 0)
+                curr_value = monthly_values.get(curr_month, 0)
+                entity_change = curr_value - prev_value
+
+                if abs(entity_change) >= significance_threshold:
+                    entity_percentage_change = (entity_change / prev_value * 100) if prev_value != 0 else 0
+                    contribution_to_total_pct = (entity_change / total_change * 100) if total_change != 0 else 0
+
+                    contribution_data = {
+                        'entity': entity_name,
+                        'previous_value': prev_value,
+                        'current_value': curr_value,
+                        'absolute_change': entity_change,
+                        'percentage_change': entity_percentage_change,
+                        'contribution_to_period_change': contribution_to_total_pct
+                    }
+
+                    entity_contributions.append(contribution_data)
+
+                    # Separate positive and negative contributors
+                    if entity_change > 0:
+                        positive_contributors.append(contribution_data)
+                    elif entity_change < 0:
+                        negative_contributors.append(contribution_data)
+
+            # Sort contributors by absolute change (most significant first)
+            entity_contributions.sort(key=lambda x: abs(x['absolute_change']), reverse=True)
+            positive_contributors.sort(key=lambda x: x['absolute_change'], reverse=True)  # Largest positive first
+            negative_contributors.sort(key=lambda x: x['absolute_change'])  # Most negative first
+
+            # Calculate net effect summary
+            total_positive_change = sum(c['absolute_change'] for c in positive_contributors)
+            total_negative_change = sum(c['absolute_change'] for c in negative_contributors)
+            net_effect = total_positive_change + total_negative_change
+
+            # Create net effect explanation
+            net_effect_explanation = create_net_effect_explanation(
+                total_change, positive_contributors, negative_contributors
+            )
+
+            period_impacts.append({
+                'period_from': prev_month,
+                'period_to': curr_month,
+                'total_change': total_change,
+                'net_effect_calculated': net_effect,
+                'net_effect_explanation': net_effect_explanation,
+                'positive_contributors': positive_contributors[:3],  # Top 3 positive
+                'negative_contributors': negative_contributors[:3],  # Top 3 negative
+                'total_positive_change': total_positive_change,
+                'total_negative_change': total_negative_change,
+                'all_contributing_entities': entity_contributions[:10],  # Top 10 overall
+                'entities_with_significant_change': len(entity_contributions)
+            })
+
+        vendor_impact_analysis[account] = {
+            'account_name': account,
+            'period_impacts': period_impacts,
+            'total_periods_analyzed': len(period_impacts)
+        }
+
+    return vendor_impact_analysis
+
+def create_net_effect_explanation(total_change: float, positive_contributors: list, negative_contributors: list) -> str:
+    """
+    Create a human-readable explanation of how positive and negative contributions
+    combine to reach the total delta.
+
+    Example: "Net change +20,000 VND: Increase +35,000 VND (Customer A), Decrease -15,000 VND (Customer B)"
+    """
+    explanation_parts = []
+
+    # Start with total change
+    direction = "increase" if total_change >= 0 else "decrease"
+    explanation_parts.append(f"Net {direction} {abs(total_change):,.0f} VND")
+
+    # Add top positive contributors
+    if positive_contributors:
+        top_positive = positive_contributors[:2]  # Top 2 positive
+        for contrib in top_positive:
+            explanation_parts.append(f"increase +{contrib['absolute_change']:,.0f} VND ({contrib['entity']})")
+
+    # Add top negative contributors
+    if negative_contributors:
+        top_negative = negative_contributors[:2]  # Top 2 negative
+        for contrib in top_negative:
+            explanation_parts.append(f"decrease {contrib['absolute_change']:,.0f} VND ({contrib['entity']})")
+
+    # Handle case with more contributors
+    total_contributors = len(positive_contributors) + len(negative_contributors)
+    if total_contributors > 4:
+        explanation_parts.append(f"...and {total_contributors - 4} other entities")
+
+    # Join with appropriate separators
+    if len(explanation_parts) == 1:
+        return explanation_parts[0]
+    elif len(explanation_parts) == 2:
+        return explanation_parts[0] + ": " + explanation_parts[1]
+    else:
+        return explanation_parts[0] + ": " + ", ".join(explanation_parts[1:])
+
+def generate_contribution_summary(positive_change: float, negative_change: float,
+                                positive_contributors: list, negative_contributors: list) -> dict:
+    """Generate a summary of positive vs negative contributions."""
+    summary = {
+        'total_positive': positive_change,
+        'total_negative': negative_change,
+        'net_effect': positive_change + negative_change,
+        'positive_entity_count': len(positive_contributors),
+        'negative_entity_count': len(negative_contributors),
+        'dominant_direction': 'Positive' if positive_change > abs(negative_change) else 'Negative' if abs(negative_change) > positive_change else 'Balanced'
+    }
+
+    return summary
+
+def analyze_revenue_variance_comprehensive(xl_bytes: bytes, filename: str, CONFIG: dict = DEFAULT_CONFIG) -> dict:
+    """
+    Comprehensive month-by-month revenue variance analysis as requested by the user.
+
+    This function provides:
+    1. Total revenue changes current month vs previous month
+    2. Revenue stream analysis - which stream causes change (accounts with '01' code)
+    3. Vendor/customer analysis - which specific vendors/customers cause change
+
+    Args:
+        xl_bytes: Excel file bytes
+        filename: Name of the file
+        CONFIG: Configuration dictionary
+
+    Returns:
+        Dictionary with comprehensive variance analysis results
+    """
+    try:
+        xls = pd.ExcelFile(io.BytesIO(xl_bytes))
+
+        if 'PL Breakdown' not in xls.sheet_names:
+            return {"error": "PL Breakdown sheet not found"}
+
+        pl_df = pd.read_excel(xls, sheet_name='PL Breakdown')
+
+        # Find data start row
+        data_start_row = None
+        for i, row in pl_df.iterrows():
+            if str(row.iloc[1]).strip().lower() == 'entity':
+                data_start_row = i
+                break
+
+        if data_start_row is None:
+            return {"error": "Could not find data start row with 'Entity' header"}
+
+        # Extract month columns
+        month_headers = pl_df.iloc[data_start_row + 1].fillna('').astype(str).tolist()
+        MONTH_TOKENS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+        month_cols = []
+        for h2 in month_headers:
+            h2s = str(h2)
+            if any(tok in h2s for tok in MONTH_TOKENS):
+                month_cols.append(h2s.strip())
+
+        # Extract data
+        data_df = pl_df.iloc[data_start_row + 2:].copy()
+        actual_col_count = len(data_df.columns)
+        new_columns = ['Account_Description', 'Entity', 'Account_Code']
+        new_columns.extend(month_cols)
+        while len(new_columns) < actual_col_count:
+            new_columns.append(f'Extra_{len(new_columns)}')
+        data_df.columns = new_columns[:actual_col_count]
+        data_df = data_df.dropna(how='all')
+
+        # Apply fill-down for Column A (Account_Description)
+        print("🔄 Applying fill-down function for revenue accounts...")
+        data_df = fill_down_accounts(data_df, 'Account_Description')
+
+        # Clean numeric columns
+        for month in month_cols:
+            if month in data_df.columns:
+                data_df[month] = data_df[month].apply(clean_numeric_value)
+
+        # Identify contribution accounts (Column C with '01')
+        print("🔍 Identifying contribution accounts with code '01'...")
+        data_df = identify_contribution_accounts(data_df, 'Account_Code')
+
+        # Extract subsidiary name
+        subsidiary = extract_subsidiary_name_from_bytes(xl_bytes, filename)
+
+        print("📊 Starting comprehensive revenue variance analysis...")
+
+        # 1. Calculate total revenue (excluding 511000000, only '01' contributions)
+        print("💰 Calculating total revenue excluding base account...")
+        total_revenue_data = calculate_total_revenue_excluding_base(
+            data_df, month_cols[:CONFIG["months_to_analyze"]],
+            'Account_Description', 'Account_Code', 'Entity'
+        )
+
+        # 2. Perform month-over-month variance analysis
+        print("📈 Performing month-by-month variance analysis...")
+        variance_analysis = analyze_month_over_month_variance(total_revenue_data['monthly_totals'])
+
+        # 3. Analyze revenue stream contributions
+        print("🔍 Analyzing revenue stream contributions...")
+        revenue_streams = analyze_revenue_stream_contributions(
+            data_df, month_cols[:CONFIG["months_to_analyze"]],
+            'Account_Description', 'Account_Code', 'Entity'
+        )
+
+        # 4. Analyze vendor/customer impacts
+        print("👥 Analyzing vendor/customer impacts...")
+        vendor_impact = analyze_vendor_customer_impact(
+            revenue_streams,
+            CONFIG.get("revenue_entity_threshold_vnd", 100000)
+        )
+
+        # 5. Prepare comprehensive results
+        results = {
+            'subsidiary': subsidiary,
+            'filename': filename,
+            'months_analyzed': month_cols[:CONFIG["months_to_analyze"]],
+            'analysis_summary': {
+                'total_revenue_streams': len(revenue_streams),
+                'total_variance_periods': len(variance_analysis),
+                'accounts_with_vendor_impact': len(vendor_impact)
+            },
+
+            # Core Analysis Results
+            'total_revenue_analysis': {
+                'monthly_totals': total_revenue_data['monthly_totals'],
+                'month_over_month_changes': variance_analysis,
+                'contributing_accounts_count': len(total_revenue_data['contributing_accounts'])
+            },
+
+            'revenue_stream_analysis': {
+                'streams': revenue_streams,
+                'stream_count': len(revenue_streams),
+                'summary': {
+                    stream_name: {
+                        'total_periods': len(stream_data['month_changes']),
+                        'total_entities': stream_data['total_entities'],
+                        'latest_monthly_total': list(stream_data['monthly_totals'].values())[-1] if stream_data['monthly_totals'] else 0
+                    }
+                    for stream_name, stream_data in revenue_streams.items()
+                }
+            },
+
+            'vendor_customer_impact': {
+                'detailed_analysis': vendor_impact,
+                'summary': {
+                    account: {
+                        'total_periods_analyzed': analysis_data['total_periods_analyzed'],
+                        'periods_with_significant_entities': sum(1 for p in analysis_data['period_impacts'] if p['entities_with_significant_change'] > 0)
+                    }
+                    for account, analysis_data in vendor_impact.items()
+                }
+            },
+
+            # High-level insights
+            'key_insights': generate_key_insights(variance_analysis, revenue_streams, vendor_impact),
+
+            'configuration_used': {
+                'months_analyzed': CONFIG["months_to_analyze"],
+                'revenue_entity_threshold_vnd': CONFIG.get("revenue_entity_threshold_vnd", 100000),
+                'excluded_base_account': '511000000'
+            }
+        }
+
+        print("✅ Comprehensive revenue variance analysis completed successfully!")
+        return results
+
+    except Exception as e:
+        print(f"❌ Revenue variance analysis failed: {str(e)}")
+        return {"error": f"Revenue variance analysis failed: {str(e)}"}
+
+def generate_key_insights(variance_analysis: List[dict], revenue_streams: dict, vendor_impact: dict) -> List[str]:
+    """Generate high-level insights from the analysis results including net effect analysis."""
+    insights = []
+
+    # Total revenue insights
+    if variance_analysis:
+        largest_change = max(variance_analysis, key=lambda x: abs(x['absolute_change']))
+        insights.append(
+            f"Largest month-over-month change: {largest_change['change_direction']} of "
+            f"{abs(largest_change['absolute_change']):,.0f} VND "
+            f"({largest_change['percentage_change']:+.1f}%) from {largest_change['period_from']} to {largest_change['period_to']}"
+        )
+
+    # Revenue stream insights
+    if revenue_streams:
+        most_volatile_stream = None
+        max_volatility = 0
+
+        for stream_name, stream_data in revenue_streams.items():
+            if stream_data['month_changes']:
+                avg_abs_change = sum(abs(change['absolute_change']) for change in stream_data['month_changes']) / len(stream_data['month_changes'])
+                if avg_abs_change > max_volatility:
+                    max_volatility = avg_abs_change
+                    most_volatile_stream = stream_name
+
+        if most_volatile_stream:
+            insights.append(f"Most volatile revenue stream: {most_volatile_stream} with average change of {max_volatility:,.0f} VND per month")
+
+    # Net effect insights - find the most interesting net effect examples
+    best_net_effect_example = None
+    max_net_complexity = 0
+
+    for account_data in vendor_impact.values():
+        for period_impact in account_data['period_impacts']:
+            positive_count = len(period_impact.get('positive_contributors', []))
+            negative_count = len(period_impact.get('negative_contributors', []))
+            total_complexity = positive_count + negative_count
+
+            # Look for cases with both positive and negative contributors
+            if positive_count > 0 and negative_count > 0 and total_complexity > max_net_complexity:
+                max_net_complexity = total_complexity
+                best_net_effect_example = period_impact
+
+    if best_net_effect_example:
+        net_explanation = best_net_effect_example.get('net_effect_explanation', '')
+        insights.append(f"Complex net effect example: {net_explanation}")
+
+    # Entity contribution insights
+    total_significant_entities = sum(
+        sum(period['entities_with_significant_change'] for period in account_data['period_impacts'])
+        for account_data in vendor_impact.values()
+    )
+
+    if total_significant_entities > 0:
+        insights.append(f"Total entities with significant changes across all periods: {total_significant_entities}")
+
+    # Net effect balance insights
+    total_periods_with_mixed_effects = 0
+    for account_data in vendor_impact.values():
+        for period_impact in account_data['period_impacts']:
+            has_positive = len(period_impact.get('positive_contributors', [])) > 0
+            has_negative = len(period_impact.get('negative_contributors', [])) > 0
+            if has_positive and has_negative:
+                total_periods_with_mixed_effects += 1
+
+    if total_periods_with_mixed_effects > 0:
+        insights.append(f"Mixed effects detected in {total_periods_with_mixed_effects} period(s) - changes driven by offsetting customer impacts")
+
+    return insights
+
 def _build_total_trend(group_accounts: dict, months: list[str]) -> dict:
     """
     Collapse {account: {'monthly_totals': {m: v}, ...}, ...}
