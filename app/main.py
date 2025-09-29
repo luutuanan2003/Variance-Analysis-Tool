@@ -13,7 +13,11 @@ This is the restructured version following FastAPI best practices:
 from pathlib import Path
 from contextlib import asynccontextmanager
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, Request, HTTPException
+
+# Load environment variables from .env file
+load_dotenv()
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse

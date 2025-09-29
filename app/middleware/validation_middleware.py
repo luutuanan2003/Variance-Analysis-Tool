@@ -199,13 +199,30 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         """Add security headers to response."""
         response = await call_next(request)
 
+        # Check if this is a docs endpoint that needs relaxed CSP for Swagger UI
+        is_docs_endpoint = request.url.path in ["/docs", "/redoc"] or request.url.path.startswith("/openapi")
+
+        if is_docs_endpoint:
+            # Relaxed CSP for API documentation (Swagger UI/ReDoc)
+            csp = (
+                "default-src 'self'; "
+                "script-src 'self' 'unsafe-inline' cdn.jsdelivr.net; "
+                "style-src 'self' 'unsafe-inline' cdn.jsdelivr.net; "
+                "img-src 'self' data: fastapi.tiangolo.com; "
+                "font-src 'self' data:; "
+                "connect-src 'self';"
+            )
+        else:
+            # Strict CSP for all other endpoints
+            csp = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline';"
+
         # Add security headers
         security_headers = {
             "X-Content-Type-Options": "nosniff",
             "X-Frame-Options": "DENY",
             "X-XSS-Protection": "1; mode=block",
             "Referrer-Policy": "strict-origin-when-cross-origin",
-            "Content-Security-Policy": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline';",
+            "Content-Security-Policy": csp,
             "Permissions-Policy": "geolocation=(), microphone=(), camera=()"
         }
 

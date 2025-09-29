@@ -17,6 +17,7 @@ from ..data.excel_processing import (
 from ..analysis.anomaly_detection import build_anoms_python_mode, build_anoms_ai_mode
 from ..analysis.revenue_analysis import analyze_comprehensive_revenue_impact_from_bytes, analyze_revenue_variance_comprehensive
 from ..analysis.revenue_variance_excel import _add_revenue_variance_analysis_to_sheet
+from ..services.recent_months_service import recent_months_service
 from ..utils.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -155,6 +156,54 @@ def process_all_python_mode(
     except Exception as e:
         logger.error(f"⚠️  Revenue Analysis sheet creation failed: {e}", exc_info=True)
         # Continue without revenue analysis if it fails
+
+    # === ADD RECENT MONTHS ANALYSIS SHEET ===
+    logger.info("📊 Adding Recent Months Analysis sheet...")
+    try:
+        if files:
+            # Create the recent months analysis for all files
+            logger.info("🚀 Running recent months analysis...")
+
+            # Get recent months analysis workbook
+            recent_months_wb_bytes = recent_months_service.analyze_recent_months_sync(
+                files=files,
+                config=CONFIG
+            )
+
+            # Load the recent months workbook to extract the analysis sheet
+            from openpyxl import load_workbook
+            recent_wb = load_workbook(io.BytesIO(recent_months_wb_bytes))
+            recent_ws_source = recent_wb["Recent Months Analysis"]
+
+            # Create new sheet in main workbook
+            recent_ws = wb.create_sheet(title="Recent Months Analysis")
+
+            # Copy data from recent months analysis sheet
+            for row in recent_ws_source.iter_rows(values_only=True):
+                recent_ws.append(row)
+
+            # Copy formatting
+            for row in recent_ws_source.iter_rows():
+                for cell in row:
+                    target_cell = recent_ws.cell(row=cell.row, column=cell.column)
+                    if cell.font:
+                        target_cell.font = cell.font
+                    if cell.fill:
+                        target_cell.fill = cell.fill
+                    if cell.border:
+                        target_cell.border = cell.border
+                    if cell.alignment:
+                        target_cell.alignment = cell.alignment
+
+            # Copy column dimensions
+            for col_letter, col_dim in recent_ws_source.column_dimensions.items():
+                recent_ws.column_dimensions[col_letter].width = col_dim.width
+
+            logger.info("✅ Recent Months Analysis sheet added successfully")
+
+    except Exception as e:
+        logger.error(f"⚠️  Recent Months Analysis sheet creation failed: {e}", exc_info=True)
+        # Continue without recent months analysis if it fails
 
     bio = io.BytesIO()
     wb.save(bio)

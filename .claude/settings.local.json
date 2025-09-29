@@ -14,7 +14,8 @@
       "Bash(tree:*)",
       "Bash(lsof:*)",
       "Bash(xargs kill:*)",
-      "Bash(pip install:*)"
+      "Bash(pip install:*)",
+      "Bash(env)"
     ],
     "deny": [],
     "ask": []
