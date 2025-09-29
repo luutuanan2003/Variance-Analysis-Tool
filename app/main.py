@@ -26,13 +26,19 @@ from .core.exceptions import (
 )
 from .api import health, analysis
 from .services.analysis_service import analysis_service
+from .utils.logging_config import setup_logging, get_logger
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan events."""
+    # Setup logging
+    log_level = "DEBUG" if get_settings().debug else "INFO"
+    setup_logging(level=log_level, log_file="logs/variance_analysis.log")
+    logger = get_logger(__name__)
+
     # Startup
     settings = get_settings()
-    print(f"🚀 Starting {settings.app_name} v{settings.app_version}")
+    logger.info(f"🚀 Starting {settings.app_name} v{settings.app_version}")
 
     # Setup periodic cleanup for old sessions
     import asyncio
@@ -47,7 +53,7 @@ async def lifespan(app: FastAPI):
                 )
                 await asyncio.sleep(300)  # Run every 5 minutes
             except Exception as e:
-                print(f"Session cleanup error: {e}")
+                logger.error(f"Session cleanup error: {e}", exc_info=True)
                 await asyncio.sleep(60)  # Retry after 1 minute
 
     # Start cleanup task
@@ -56,7 +62,7 @@ async def lifespan(app: FastAPI):
     yield
 
     # Shutdown
-    print("🛑 Shutting down application...")
+    logger.info("🛑 Shutting down application...")
     cleanup_task.cancel()
     try:
         await cleanup_task

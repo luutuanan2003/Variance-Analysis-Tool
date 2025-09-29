@@ -9,6 +9,9 @@ from typing import Dict, List, Any
 
 from ..data.data_utils import DEFAULT_CONFIG, REVENUE_ANALYSIS
 from ..data.excel_processing import extract_subsidiary_name_from_bytes
+from ..utils.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 # Import AI analyzer for AI mode
 try:
@@ -16,7 +19,7 @@ try:
     AI_AVAILABLE = True
 except ImportError:
     AI_AVAILABLE = False
-    print("⚠️  AI analyzer not available - AI mode will be disabled")
+    logger.warning("⚠️  AI analyzer not available - AI mode will be disabled")
 
 def clean_numeric_value(val):
     """Convert value to numeric, handling various formats"""
@@ -417,7 +420,7 @@ def analyze_revenue_variance_comprehensive(xl_bytes: bytes, filename: str, CONFI
         data_df = data_df.dropna(how='all')
 
         # Apply fill-down for Column A (Account_Description)
-        print("🔄 Applying fill-down function for revenue accounts...")
+        logger.info("🔄 Applying fill-down function for revenue accounts...")
         data_df = fill_down_accounts(data_df, 'Account_Description')
 
         # Clean numeric columns
@@ -426,34 +429,34 @@ def analyze_revenue_variance_comprehensive(xl_bytes: bytes, filename: str, CONFI
                 data_df[month] = data_df[month].apply(clean_numeric_value)
 
         # Identify contribution accounts (Column C with '01')
-        print("🔍 Identifying contribution accounts with code '01'...")
+        logger.info("🔍 Identifying contribution accounts with code '01'...")
         data_df = identify_contribution_accounts(data_df, 'Account_Code')
 
         # Extract subsidiary name
         subsidiary = extract_subsidiary_name_from_bytes(xl_bytes, filename)
 
-        print("📊 Starting comprehensive revenue variance analysis...")
+        logger.info("📊 Starting comprehensive revenue variance analysis...")
 
         # 1. Calculate total revenue (excluding 511000000, only '01' contributions)
-        print("💰 Calculating total revenue excluding base account...")
+        logger.info("💰 Calculating total revenue excluding base account...")
         total_revenue_data = calculate_total_revenue_excluding_base(
             data_df, month_cols[:CONFIG["months_to_analyze"]],
             'Account_Description', 'Account_Code', 'Entity'
         )
 
         # 2. Perform month-over-month variance analysis
-        print("📈 Performing month-by-month variance analysis...")
+        logger.info("📈 Performing month-by-month variance analysis...")
         variance_analysis = analyze_month_over_month_variance(total_revenue_data['monthly_totals'])
 
         # 3. Analyze revenue stream contributions
-        print("🔍 Analyzing revenue stream contributions...")
+        logger.info("🔍 Analyzing revenue stream contributions...")
         revenue_streams = analyze_revenue_stream_contributions(
             data_df, month_cols[:CONFIG["months_to_analyze"]],
             'Account_Description', 'Account_Code', 'Entity'
         )
 
         # 4. Analyze vendor/customer impacts
-        print("👥 Analyzing vendor/customer impacts...")
+        logger.info("👥 Analyzing vendor/customer impacts...")
         vendor_impact = analyze_vendor_customer_impact(
             revenue_streams,
             CONFIG.get("revenue_entity_threshold_vnd", 100000)
@@ -511,11 +514,11 @@ def analyze_revenue_variance_comprehensive(xl_bytes: bytes, filename: str, CONFI
             }
         }
 
-        print("✅ Comprehensive revenue variance analysis completed successfully!")
+        logger.info("✅ Comprehensive revenue variance analysis completed successfully!")
         return results
 
     except Exception as e:
-        print(f"❌ Revenue variance analysis failed: {str(e)}")
+        logger.error(f"❌ Revenue variance analysis failed: {str(e)}", exc_info=True)
         return {"error": f"Revenue variance analysis failed: {str(e)}"}
 
 def generate_key_insights(variance_analysis: List[dict], revenue_streams: dict, vendor_impact: dict) -> List[str]:
@@ -1536,9 +1539,9 @@ def analyze_comprehensive_revenue_impact_ai(
     AI-powered comprehensive revenue impact analysis matching core.py functionality.
     Uses enhanced AI prompts to provide detailed 511/641/642 analysis with entity-level insights.
     """
-    print(f"\n🎯 ===== AI COMPREHENSIVE REVENUE IMPACT ANALYSIS =====")
-    print(f"📁 File: {filename}")
-    print(f"🏢 Subsidiary: {sub}")
+    logger.info("🎯 ===== AI COMPREHENSIVE REVENUE IMPACT ANALYSIS =====")
+    logger.info(f"📁 File: {filename}")
+    logger.info(f"🏢 Subsidiary: {sub}")
 
     if not AI_AVAILABLE:
         return {
@@ -1550,17 +1553,17 @@ def analyze_comprehensive_revenue_impact_ai(
     try:
         # Initialize AI analyzer
         llm_analyzer = LLMFinancialAnalyzer(CONFIG.get("llm_model", "gpt-4o"))
-        print(f"✅ AI analyzer initialized with model: {CONFIG.get('llm_model', 'gpt-4o')}")
+        logger.info(f"✅ AI analyzer initialized with model: {CONFIG.get('llm_model', 'gpt-4o')}")
 
         # Run comprehensive revenue impact analysis
-        print(f"\n🔍 Running AI comprehensive revenue impact analysis...")
+        logger.info("🔍 Running AI comprehensive revenue impact analysis...")
         ai_analysis_results = llm_analyzer.analyze_comprehensive_revenue_impact(
             excel_bytes, filename, sub, CONFIG
         )
-        print(f"✅ AI comprehensive analysis completed with {len(ai_analysis_results)} insights")
+        logger.info(f"✅ AI comprehensive analysis completed with {len(ai_analysis_results)} insights")
 
         # Convert AI results to structured format matching core.py output
-        print(f"\n📊 Converting AI results to comprehensive revenue analysis structure...")
+        logger.info("📊 Converting AI results to comprehensive revenue analysis structure...")
 
         analysis_result = {
             'subsidiary': sub,
@@ -1702,13 +1705,13 @@ def analyze_comprehensive_revenue_impact_ai(
             'ai_insights_count': len(ai_analysis_results)
         }
 
-        print(f"✅ AI comprehensive revenue analysis conversion completed")
-        print(f"📊 Structure: {len(revenue_accounts)} revenue accounts, {len(sga_641_accounts)} SG&A 641 accounts, {len(sga_642_accounts)} SG&A 642 accounts")
+        logger.info("✅ AI comprehensive revenue analysis conversion completed")
+        logger.info(f"📊 Structure: {len(revenue_accounts)} revenue accounts, {len(sga_641_accounts)} SG&A 641 accounts, {len(sga_642_accounts)} SG&A 642 accounts")
 
         return analysis_result
 
     except Exception as e:
-        print(f"\n❌ AI comprehensive revenue analysis failed: {str(e)}")
+        logger.error(f"❌ AI comprehensive revenue analysis failed: {str(e)}", exc_info=True)
         return {
             "error": f"AI comprehensive analysis failed: {str(e)}",
             "subsidiary": sub,

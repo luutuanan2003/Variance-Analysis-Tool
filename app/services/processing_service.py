@@ -17,6 +17,9 @@ from ..data.excel_processing import (
 from ..analysis.anomaly_detection import build_anoms_python_mode, build_anoms_ai_mode
 from ..analysis.revenue_analysis import analyze_comprehensive_revenue_impact_from_bytes, analyze_revenue_variance_comprehensive
 from ..analysis.revenue_variance_excel import _add_revenue_variance_analysis_to_sheet
+from ..utils.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 def process_all(
     files: list[tuple[str, bytes]],
@@ -95,7 +98,7 @@ def process_all_python_mode(
     apply_excel_formatting_ws(ws, anom_df, CONFIG)
 
     # === ADD CLEANED SHEETS FOR EACH FILE ===
-    print(f"\n📊 Adding cleaned BS and PL sheets...")
+    logger.info("📊 Adding cleaned BS and PL sheets...")
     try:
         for idx, (fname, xl_bytes) in enumerate(files):
             sub = extract_subsidiary_name_from_bytes(xl_bytes, fname)
@@ -108,9 +111,9 @@ def process_all_python_mode(
                     bs_ws = wb.create_sheet(title=f"{file_prefix}_BS_Cleaned"[:CONFIG["max_sheet_name_length"]])
                     for r in dataframe_to_rows(bs_df, index=False, header=True):
                         bs_ws.append(r)
-                    print(f"✅ Added cleaned BS sheet for {sub}")
+                    logger.info(f"✅ Added cleaned BS sheet for {sub}")
             except Exception as e:
-                print(f"⚠️  Could not add cleaned BS sheet for {sub}: {e}")
+                logger.warning(f"⚠️  Could not add cleaned BS sheet for {sub}: {e}")
 
             # Add cleaned Profit & Loss Sheet
             try:
@@ -119,38 +122,38 @@ def process_all_python_mode(
                     pl_ws = wb.create_sheet(title=f"{file_prefix}_PL_Cleaned"[:CONFIG["max_sheet_name_length"]])
                     for r in dataframe_to_rows(pl_df, index=False, header=True):
                         pl_ws.append(r)
-                    print(f"✅ Added cleaned PL sheet for {sub}")
+                    logger.info(f"✅ Added cleaned PL sheet for {sub}")
             except Exception as e:
-                print(f"⚠️  Could not add cleaned PL sheet for {sub}: {e}")
+                logger.warning(f"⚠️  Could not add cleaned PL sheet for {sub}: {e}")
 
     except Exception as e:
-        print(f"⚠️  Error adding cleaned sheets: {e}")
+        logger.error(f"⚠️  Error adding cleaned sheets: {e}", exc_info=True)
 
     # === ADD REVENUE VARIANCE ANALYSIS SHEET ===
-    print(f"\n📊 Adding Revenue Variance Analysis sheet...")
+    logger.info("📊 Adding Revenue Variance Analysis sheet...")
     try:
         # Run comprehensive revenue variance analysis for the first file
         if files:
             first_file_name, first_file_bytes = files[0]
 
             # Use the new comprehensive variance analysis
-            print("🚀 Running new comprehensive revenue variance analysis...")
+            logger.info("🚀 Running new comprehensive revenue variance analysis...")
             variance_analysis = analyze_revenue_variance_comprehensive(first_file_bytes, first_file_name, CONFIG)
 
             # Create revenue variance analysis sheet
             rev_ws = wb.create_sheet(title="Revenue Variance Analysis")
             _add_revenue_variance_analysis_to_sheet(rev_ws, variance_analysis)
-            print(f"✅ Revenue Variance Analysis sheet added successfully")
+            logger.info("✅ Revenue Variance Analysis sheet added successfully")
 
             # Also add the legacy analysis for comparison
-            print("📊 Adding legacy revenue analysis for comparison...")
+            logger.info("📊 Adding legacy revenue analysis for comparison...")
             legacy_analysis = analyze_comprehensive_revenue_impact_from_bytes(first_file_bytes, first_file_name, CONFIG)
             legacy_ws = wb.create_sheet(title="Legacy Revenue Analysis")
             _add_revenue_analysis_to_sheet(legacy_ws, legacy_analysis)
-            print(f"✅ Legacy Revenue Analysis sheet added successfully")
+            logger.info("✅ Legacy Revenue Analysis sheet added successfully")
 
     except Exception as e:
-        print(f"⚠️  Revenue Analysis sheet creation failed: {e}")
+        logger.error(f"⚠️  Revenue Analysis sheet creation failed: {e}", exc_info=True)
         # Continue without revenue analysis if it fails
 
     bio = io.BytesIO()
@@ -163,22 +166,22 @@ def process_all_ai_mode(
     progress_callback=None
 ) -> tuple[bytes, list[tuple[str, bytes]]]:
     """AI-powered analysis mode."""
-    print(f"\n🚀 ===== STARTING AI VARIANCE ANALYSIS PROCESSING =====\n")
-    print(f"📥 Processing {len(files)} Excel file(s) for AI analysis")
-    print(f"🤖 LLM Model: {CONFIG.get('llm_model', 'gpt-4o')}")
-    print(f"🔧 AI-Only Mode: {CONFIG.get('use_llm_analysis', True)}")
+    logger.info("🚀 ===== STARTING AI VARIANCE ANALYSIS PROCESSING =====")
+    logger.info(f"📥 Processing {len(files)} Excel file(s) for AI analysis")
+    logger.info(f"🤖 LLM Model: {CONFIG.get('llm_model', 'gpt-4o')}")
+    logger.info(f"🔧 AI-Only Mode: {CONFIG.get('use_llm_analysis', True)}")
 
     # === EXCEL WORKBOOK INITIALIZATION ===
-    print(f"\n📊 Initializing Excel workbook for results...")
+    logger.info("📊 Initializing Excel workbook for results...")
     wb = Workbook()
     ws = wb.active
     ws.title = "Anomalies Summary"
     all_anoms: list[pd.DataFrame] = []
     debug_files: list[tuple[str, bytes]] = []  # Store debug files for download
-    print(f"✅ Excel workbook initialized successfully")
+    logger.info("✅ Excel workbook initialized successfully")
 
     # === MULTI-FILE PROCESSING LOOP ===
-    print(f"\n🔄 Starting processing loop for {len(files)} file(s)...\n")
+    logger.info(f"🔄 Starting processing loop for {len(files)} file(s)...")
 
     for file_idx, (fname, xl_bytes) in enumerate(files, 1):
         # Calculate progress range for this file (30% to 80% of total)
@@ -188,83 +191,83 @@ def process_all_ai_mode(
         if progress_callback:
             progress_callback(file_start, f"Processing file {file_idx}/{len(files)}: {fname}")
 
-        print(f"\n📁 ===== PROCESSING FILE {file_idx}/{len(files)} =====\n")
-        print(f"📄 File: {fname}")
-        print(f"📏 File Size: {len(xl_bytes):,} bytes ({len(xl_bytes)/CONFIG['bytes_per_kb']:.1f} KB)")
+        logger.info(f"📁 ===== PROCESSING FILE {file_idx}/{len(files)} =====")
+        logger.info(f"📄 File: {fname}")
+        logger.info(f"📏 File Size: {len(xl_bytes):,} bytes ({len(xl_bytes)/CONFIG['bytes_per_kb']:.1f} KB)")
 
         if progress_callback:
             progress_callback(file_start + 2, f"Extracting subsidiary name from {fname}")
 
-        print(f"\n🏢 Extracting subsidiary name...")
+        logger.info("🏢 Extracting subsidiary name...")
         sub = extract_subsidiary_name_from_bytes(xl_bytes, fname)
-        print(f"✅ Subsidiary: '{sub}'")
+        logger.info(f"✅ Subsidiary: '{sub}'")
 
         if progress_callback:
             progress_callback(file_start + 5, f"Starting AI analysis for {sub}")
 
         # === AI ANALYSIS ===
-        print(f"\n🤖 Starting AI analysis for '{sub}'...")
+        logger.info(f"🤖 Starting AI analysis for '{sub}'...")
         anoms = build_anoms_ai_mode(sub, xl_bytes, fname, CONFIG)
 
         if progress_callback:
             progress_callback(file_end - 5, f"AI analysis complete for {sub}")
 
         if anoms is not None and not anoms.empty:
-            print(f"✅ AI analysis completed successfully")
-            print(f"   • Anomalies detected: {len(anoms)}")
+            logger.info("✅ AI analysis completed successfully")
+            logger.info(f"   • Anomalies detected: {len(anoms)}")
             if len(anoms) > 0:
                 ai_status_count = anoms['Status'].value_counts().to_dict()
                 for status, count in ai_status_count.items():
-                    print(f"   • {status}: {count}")
+                    logger.info(f"   • {status}: {count}")
             all_anoms.append(anoms)
         else:
-            print(f"⚠️  No anomalies detected or AI analysis returned empty result")
+            logger.warning("⚠️  No anomalies detected or AI analysis returned empty result")
 
-        print(f"\n✅ File '{fname}' processing completed\n")
+        logger.info(f"✅ File '{fname}' processing completed")
 
     # === CONSOLIDATION & EXCEL GENERATION ===
-    print(f"\n📊 ===== CONSOLIDATING RESULTS =====\n")
-    print(f"📈 Processed {len(files)} file(s) successfully")
+    logger.info("📊 ===== CONSOLIDATING RESULTS =====")
+    logger.info(f"📈 Processed {len(files)} file(s) successfully")
 
     if all_anoms:
-        print(f"🔗 Consolidating {len(all_anoms)} result set(s)...")
+        logger.info(f"🔗 Consolidating {len(all_anoms)} result set(s)...")
         anom_df = pd.concat(all_anoms, ignore_index=True)
-        print(f"✅ Consolidation completed")
-        print(f"   • Total anomalies: {len(anom_df)}")
+        logger.info("✅ Consolidation completed")
+        logger.info(f"   • Total anomalies: {len(anom_df)}")
 
         # Summary by subsidiary
         if len(anom_df) > 0:
             sub_summary = anom_df['Subsidiary'].value_counts()
-            print(f"\n📋 Anomaly summary by subsidiary:")
+            logger.info("📋 Anomaly summary by subsidiary:")
             for sub, count in sub_summary.items():
-                print(f"   • {sub}: {count} anomalies")
+                logger.info(f"   • {sub}: {count} anomalies")
 
             status_summary = anom_df['Status'].value_counts()
-            print(f"\n🔍 Analysis status summary:")
+            logger.info("🔍 Analysis status summary:")
             for status, count in status_summary.items():
-                print(f"   • {status}: {count}")
+                logger.info(f"   • {status}: {count}")
     else:
-        print(f"⚠️  No anomalies detected across all files")
+        logger.warning("⚠️  No anomalies detected across all files")
         anom_df = pd.DataFrame(columns=[
             "Subsidiary","Account","Period","Pct Change","Abs Change (VND)",
             "Trigger(s)","Suggested likely cause","Status","Notes"
         ])
 
     # === WRITE TO WORKSHEET ===
-    print(f"\n📝 Writing results to Excel worksheet...")
+    logger.info("📝 Writing results to Excel worksheet...")
     row_count = 0
     for r in dataframe_to_rows(anom_df, index=False, header=True):
         ws.append(r)
         row_count += 1
-    print(f"✅ Written {row_count} rows to worksheet (including header)")
+    logger.info(f"✅ Written {row_count} rows to worksheet (including header)")
 
     # === VISUAL FORMATTING ===
-    print(f"\n🎨 Applying visual formatting to Excel output...")
+    logger.info("🎨 Applying visual formatting to Excel output...")
     apply_excel_formatting_ws(ws, anom_df, CONFIG)
-    print(f"✅ Excel formatting applied successfully")
+    logger.info("✅ Excel formatting applied successfully")
 
     # === ADD CLEANED SHEETS FOR EACH FILE (AI MODE) ===
-    print(f"\n📊 Adding cleaned BS and PL sheets to AI analysis...")
+    logger.info("📊 Adding cleaned BS and PL sheets to AI analysis...")
     try:
         for idx, (fname, xl_bytes) in enumerate(files):
             sub = extract_subsidiary_name_from_bytes(xl_bytes, fname)
@@ -277,9 +280,9 @@ def process_all_ai_mode(
                     bs_ws = wb.create_sheet(title=f"{file_prefix}_BS_Cleaned"[:CONFIG["max_sheet_name_length"]])
                     for r in dataframe_to_rows(bs_df, index=False, header=True):
                         bs_ws.append(r)
-                    print(f"✅ Added cleaned BS sheet for {sub}")
+                    logger.info(f"✅ Added cleaned BS sheet for {sub}")
             except Exception as e:
-                print(f"⚠️  Could not add cleaned BS sheet for {sub}: {e}")
+                logger.warning(f"⚠️  Could not add cleaned BS sheet for {sub}: {e}")
 
             # Add cleaned Profit & Loss Sheet
             try:
@@ -288,25 +291,25 @@ def process_all_ai_mode(
                     pl_ws = wb.create_sheet(title=f"{file_prefix}_PL_Cleaned"[:CONFIG["max_sheet_name_length"]])
                     for r in dataframe_to_rows(pl_df, index=False, header=True):
                         pl_ws.append(r)
-                    print(f"✅ Added cleaned PL sheet for {sub}")
+                    logger.info(f"✅ Added cleaned PL sheet for {sub}")
             except Exception as e:
-                print(f"⚠️  Could not add cleaned PL sheet for {sub}: {e}")
+                logger.warning(f"⚠️  Could not add cleaned PL sheet for {sub}: {e}")
 
     except Exception as e:
-        print(f"⚠️  Error adding cleaned sheets to AI analysis: {e}")
+        logger.error(f"⚠️  Error adding cleaned sheets to AI analysis: {e}", exc_info=True)
 
     # === RETURN BYTES ===
-    print(f"\n💾 Generating final Excel file...")
+    logger.info("💾 Generating final Excel file...")
     bio = io.BytesIO()
     wb.save(bio)
     final_size = len(bio.getvalue())
-    print(f"✅ Excel file generated successfully")
-    print(f"   • Output size: {final_size:,} bytes ({final_size/1024:.1f} KB)")
+    logger.info("✅ Excel file generated successfully")
+    logger.info(f"   • Output size: {final_size:,} bytes ({final_size/1024:.1f} KB)")
 
-    print(f"\n📊 Debug Files Summary:")
-    print(f"   • Debug files created: {len(debug_files)}")
+    logger.info("📊 Debug Files Summary:")
+    logger.info(f"   • Debug files created: {len(debug_files)}")
     for debug_name, debug_bytes in debug_files:
-        print(f"     - {debug_name}: {len(debug_bytes):,} bytes ({len(debug_bytes)/1024:.1f} KB)")
+        logger.info(f"     - {debug_name}: {len(debug_bytes):,} bytes ({len(debug_bytes)/1024:.1f} KB)")
 
-    print(f"\n🎉 ===== AI VARIANCE ANALYSIS COMPLETED =====\n")
+    logger.info("🎉 ===== AI VARIANCE ANALYSIS COMPLETED =====")
     return bio.getvalue(), debug_files

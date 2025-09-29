@@ -14,13 +14,17 @@ env_path = project_root / ".env"
 load_dotenv(dotenv_path=env_path)  # Load from project root
 load_dotenv()  # Fallback to default behavior
 
+from ..utils.logging_config import get_logger
+
+logger = get_logger(__name__)
+
 
 class LLMFinancialAnalyzer:
     def __init__(self, model_name: str = "gpt-4o"):
         """Initialize LLM analyzer with OpenAI GPT model."""
         # Debug information for cloud deployments
-        print(f"🔧 Python version: {sys.version}")
-        print(f"🔧 Environment: {'RENDER' if os.getenv('RENDER') else 'LOCAL'}")
+        logger.info(f"🔧 Python version: {sys.version}")
+        logger.info(f"🔧 Environment: {'RENDER' if os.getenv('RENDER') else 'LOCAL'}")
 
         # Get OpenAI configuration from environment
         self.openai_model = os.getenv("OPENAI_MODEL", "gpt-4o")
@@ -28,11 +32,11 @@ class LLMFinancialAnalyzer:
 
         # Debug: Show if API key was loaded
         if self.openai_api_key:
-            print(f"✅ OpenAI API key loaded: {self.openai_api_key[:10]}...{self.openai_api_key[-4:]}")
+            logger.info(f"✅ OpenAI API key loaded: {self.openai_api_key[:10]}...{self.openai_api_key[-4:]}")
         else:
-            print("❌ OpenAI API key not found in environment variables")
-            print(f"🔍 .env file path: {env_path}")
-            print(f"🔍 .env file exists: {env_path.exists()}")
+            logger.error("❌ OpenAI API key not found in environment variables")
+            logger.info(f"🔍 .env file path: {env_path}")
+            logger.info(f"🔍 .env file exists: {env_path.exists()}")
 
         if not self.openai_api_key or self.openai_api_key == "your_openai_api_key_here":
             raise ValueError(
@@ -81,8 +85,8 @@ class LLMFinancialAnalyzer:
 
         if self.openai_client is None:
             raise RuntimeError(f"Failed to initialize OpenAI client after {len(initialization_attempts)} attempts. Last error: {last_error}")
-        print(f"🤖 Using OpenAI model: {self.openai_model}")
-        print(f"🔑 API key configured: {self.openai_api_key[:8]}...{self.openai_api_key[-4:]}")
+        logger.info(f"🤖 Using OpenAI model: {self.openai_model}")
+        logger.info(f"🔑 API key configured: {self.openai_api_key[:8]}...{self.openai_api_key[-4:]}")
 
     def _init_openai_minimal(self):
         """Minimal OpenAI initialization for cloud environments that may have issues with advanced parameters."""
@@ -280,10 +284,10 @@ class LLMFinancialAnalyzer:
         config: dict
     ) -> List[Dict[str, Any]]:
         """Analyze raw Excel file focusing on BS Breakdown and PL Breakdown sheets."""
-        print(f"\n🔍 ===== STARTING RAW EXCEL ANALYSIS FOR {subsidiary} =====")
-        print(f"📄 File: {filename}")
-        print(f"📏 File Size: {len(excel_bytes):,} bytes ({len(excel_bytes)/1024:.1f} KB)")
-        print(f"🤖 Model: {self.openai_model}")
+        logger.info(f"🔍 ===== STARTING RAW EXCEL ANALYSIS FOR {subsidiary} =====")
+        logger.info(f"📄 File: {filename}")
+        logger.info(f"📏 File Size: {len(excel_bytes):,} bytes ({len(excel_bytes)/1024:.1f} KB)")
+        logger.info(f"🤖 Model: {self.openai_model}")
 
         try:
             print(f"\n📋 STEP 1: Loading Raw Excel Sheets")
@@ -465,11 +469,11 @@ class LLMFinancialAnalyzer:
         subsidiary: str,
         config: dict
     ) -> List[Dict[str, Any]]:
-        print(f"\n🔍 ===== STARTING AI ANALYSIS FOR {subsidiary} =====")
-        print(f"📊 Input Data Validation:")
-        print(f"   • Balance Sheet: {len(bs_df)} rows, {len(bs_df.columns)} columns")
-        print(f"   • Profit & Loss: {len(pl_df)} rows, {len(pl_df.columns)} columns")
-        print(f"   • Model: {self.openai_model}")
+        logger.info(f"🔍 ===== STARTING AI ANALYSIS FOR {subsidiary} =====")
+        logger.info("📊 Input Data Validation:")
+        logger.info(f"   • Balance Sheet: {len(bs_df)} rows, {len(bs_df.columns)} columns")
+        logger.info(f"   • Profit & Loss: {len(pl_df)} rows, {len(pl_df.columns)} columns")
+        logger.info(f"   • Model: {self.openai_model}")
 
         # Quick sanity checks (both sheets should be non-empty by the time we get here)
         if pl_df is None or pl_df.empty:

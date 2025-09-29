@@ -14,6 +14,9 @@ from ..data.data_utils import (
     find_customer_column, compute_mom_with_trends, classify_pl_account,
     get_threshold_cause, ACCT_THRESH
 )
+from ..utils.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 # Import AI analyzer for AI mode
 try:
@@ -21,7 +24,7 @@ try:
     AI_AVAILABLE = True
 except ImportError:
     AI_AVAILABLE = False
-    print("⚠️  AI analyzer not available - AI mode will be disabled")
+    logger.warning("⚠️  AI analyzer not available - AI mode will be disabled")
 
 def build_corr_anoms(
     sub: str,
@@ -190,7 +193,7 @@ def build_anoms_ai_mode(
     anomalies: list[dict] = []
 
     if not AI_AVAILABLE:
-        print(f"\n❌ AI analysis requested but AI analyzer not available for '{sub}'")
+        logger.error(f"❌ AI analysis requested but AI analyzer not available for '{sub}'")
         return pd.DataFrame([{
             "Subsidiary": sub,
             "Account": "AI_NOT_AVAILABLE",
@@ -203,18 +206,18 @@ def build_anoms_ai_mode(
             "Notes": "Check if llm_analyzer.py is available and dependencies are installed",
         }])
 
-    print(f"\n🧠 Starting AI analysis for '{sub}'...")
+    logger.info(f"🧠 Starting AI analysis for '{sub}'...")
     try:
         llm_analyzer = LLMFinancialAnalyzer(CONFIG.get("llm_model", "gpt-4o"))
-        print(f"✅ AI analyzer initialized with model: {CONFIG.get('llm_model', 'gpt-4o')}")
+        logger.info(f"✅ AI analyzer initialized with model: {CONFIG.get('llm_model', 'gpt-4o')}")
 
-        print(f"\n🔍 Running AI analysis on complete raw Excel file...")
+        logger.info("🔍 Running AI analysis on complete raw Excel file...")
         llm_anomalies = llm_analyzer.analyze_raw_excel_file(excel_bytes, filename, sub, CONFIG)
-        print(f"✅ AI analysis completed, processing {len(llm_anomalies)} results")
+        logger.info(f"✅ AI analysis completed, processing {len(llm_anomalies)} results")
 
-        print(f"\n📋 Converting {len(llm_anomalies)} AI results to report format...")
+        logger.info(f"📋 Converting {len(llm_anomalies)} AI results to report format...")
         for idx, anom in enumerate(llm_anomalies, 1):
-            print(f"   • Processing anomaly {idx}: Account {anom.get('account_code', 'Unknown')}")
+            logger.debug(f"   • Processing anomaly {idx}: Account {anom.get('account_code', 'Unknown')}")
             anomalies.append({
                 "Subsidiary": anom["subsidiary"],
                 "Account": anom["account_code"],
@@ -226,13 +229,13 @@ def build_anoms_ai_mode(
                 "Status": "AI Analysis",
                 "Notes": anom["details"],
             })
-        print(f"✅ Successfully converted all AI results to report format")
+        logger.info("✅ Successfully converted all AI results to report format")
 
-        print(f"\n✅ AI anomaly detection completed for '{sub}' - returning {len(anomalies)} records")
+        logger.info(f"✅ AI anomaly detection completed for '{sub}' - returning {len(anomalies)} records")
         return pd.DataFrame(anomalies)
 
     except Exception as e:
-        print(f"\n❌ AI analysis failed for '{sub}': {e}")
+        logger.error(f"❌ AI analysis failed for '{sub}': {e}", exc_info=True)
         error_record = pd.DataFrame([{
             "Subsidiary": sub,
             "Account": "AI_ERROR",
@@ -244,7 +247,7 @@ def build_anoms_ai_mode(
             "Status": "Error",
             "Notes": "Check if OpenAI is running and model is available",
         }])
-        print(f"⚠️  Returning error record to continue processing other files")
+        logger.warning("⚠️  Returning error record to continue processing other files")
         return error_record
 
 # -----------------------------------------------------------------------------
