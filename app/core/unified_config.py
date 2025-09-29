@@ -504,6 +504,28 @@ class UnifiedConfig(BaseSettings):
             "percentage_multiplier": self.data_processing.percentage_multiplier,
         })
 
+        # File processing constants (for backward compatibility with processing_service.py)
+        legacy_config.update({
+            "bytes_per_kb": 1024,
+            "progress_file_range": 50,
+            "progress_base_start": 30,
+            "file_progress_offset": {
+                "extract": 2,
+                "analysis": 5,
+                "complete": 5
+            },
+        })
+
+        # Legacy accounting thresholds (for backward compatibility with analysis algorithms)
+        legacy_config.update({
+            "gross_margin_pct_delta": 0.01,    # 1% point change m/m
+            "depr_pct_delta": 0.10,            # 10% change m/m for 217*, 632*, 214
+            "cogs_ratio_delta": 0.02,          # 2% points drift vs hist
+            "sga_pct_of_rev_delta": 0.10,      # +10% vs hist % of revenue
+            "fin_swing_pct": 0.50,             # >50% swings
+            "bs_pl_dep_diff_pct": 0.05,        # 5% mismatch between 214/217 Δ and 632 dep expense
+        })
+
         return legacy_config
 
 # Global configuration instance
