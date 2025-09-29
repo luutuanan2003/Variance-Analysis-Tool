@@ -1,144 +1,85 @@
 # app/core/config.py
-"""Application configuration management."""
+"""
+Application configuration management.
 
-from typing import List, Optional
-from dataclasses import dataclass
+This module provides backward compatibility while transitioning to the new unified config system.
+New code should use the unified config system in unified_config.py.
+"""
+
 from functools import lru_cache
-import os
+from typing import Dict, Any
 
-@dataclass
+# Import the new unified configuration system
+from .unified_config import (
+    get_unified_config,
+    get_settings as get_unified_settings,
+    get_analysis_config as get_unified_analysis_config,
+    load_config_from_env
+)
+
+# Backward compatibility exports
+from .unified_config import UnifiedConfig
+
+# For backward compatibility, we keep the old function names
+@lru_cache()
+def get_settings():
+    """
+    Get application settings (backward compatible).
+
+    Returns the app section of the unified configuration for compatibility
+    with existing code that expects the old Settings dataclass.
+    """
+    return get_unified_settings()
+
+@lru_cache()
+def get_analysis_config() -> Dict[str, Any]:
+    """
+    Get analysis configuration dictionary (backward compatible).
+
+    Returns a dictionary compatible with the old DEFAULT_CONFIG format.
+    """
+    return get_unified_analysis_config()
+
+# Legacy class for backward compatibility
 class Settings:
-    """Application settings with environment variable support."""
+    """
+    Legacy Settings class for backward compatibility.
 
-    # API Settings
-    app_name: str = "Variance Analysis Tool API"
-    app_version: str = "2.0.0"
-    debug: bool = False
+    This class is deprecated. New code should use the unified config system.
+    """
 
-    # CORS Settings
-    cors_origins: List[str] = None
-    cors_methods: List[str] = None
-    cors_headers: List[str] = None
+    def __init__(self):
+        config = get_unified_config()
 
-    # File Processing Settings
-    max_file_size: int = 100 * 1024 * 1024  # 100MB
-    allowed_file_extensions: List[str] = None
+        # Map unified config to legacy attributes
+        self.app_name = config.app.app_name
+        self.app_version = config.app.app_version
+        self.debug = config.app.debug
+        self.cors_origins = config.app.cors_origins
+        self.cors_methods = config.app.cors_methods
+        self.cors_headers = config.app.cors_headers
+        self.max_file_size = config.file_processing.max_file_size
+        self.allowed_file_extensions = config.file_processing.allowed_file_extensions
+        self.default_months_to_analyze = config.revenue_analysis.months_to_analyze
+        self.revenue_change_threshold_vnd = config.revenue_analysis.revenue_change_threshold_vnd
+        self.revenue_entity_threshold_vnd = config.revenue_analysis.revenue_entity_threshold_vnd
+        self.llm_model = config.ai_analysis.llm_model
+        self.enable_ai_analysis = config.ai_analysis.enable_ai_analysis
+        self.session_timeout_minutes = config.security.session_timeout_minutes
+        self.max_concurrent_sessions = config.security.max_concurrent_sessions
 
-    # Analysis Settings
-    default_months_to_analyze: int = 8
-    revenue_change_threshold_vnd: float = 1_000_000
-    revenue_entity_threshold_vnd: float = 100_000
+# Initialize configuration on module import
+try:
+    _ = load_config_from_env()
+except Exception as e:
+    import logging
+    logging.warning(f"Failed to load configuration: {e}")
 
-    # AI Settings
-    llm_model: str = "gpt-4o"
-    enable_ai_analysis: bool = True
-
-    # Session Management
-    session_timeout_minutes: int = 60
-    max_concurrent_sessions: int = 10
-
-    def __post_init__(self):
-        """Initialize default values and read from environment."""
-        if self.cors_origins is None:
-            self.cors_origins = ["*"]
-        if self.cors_methods is None:
-            self.cors_methods = ["*"]
-        if self.cors_headers is None:
-            self.cors_headers = ["*"]
-        if self.allowed_file_extensions is None:
-            self.allowed_file_extensions = [".xlsx", ".xls"]
-
-        # Read from environment variables
-        self.debug = os.getenv("VARIANCE_DEBUG", "false").lower() == "true"
-        self.llm_model = os.getenv("VARIANCE_LLM_MODEL", self.llm_model)
-
-class AnalysisConfig:
-    """Configuration for financial analysis parameters."""
-
-    # Revenue Analysis Thresholds
-    REVENUE_ANALYSIS = {
-        "revenue_change_threshold_vnd": 1_000_000,
-        "revenue_entity_threshold_vnd": 100_000,
-        "revenue_account_prefixes": ["511"],
-
-        "cogs_change_threshold_vnd": 500_000,
-        "cogs_entity_threshold_vnd": 50_000,
-        "cogs_account_prefixes": ["632"],
-
-        "sga_change_threshold_vnd": 500_000,
-        "sga_entity_threshold_vnd": 50_000,
-        "sga_641_account_prefixes": ["641"],
-        "sga_642_account_prefixes": ["642"],
-
-        "gross_margin_change_threshold_pct": 1.0,
-        "high_gross_margin_risk_threshold_pct": -2.0,
-        "sga_ratio_change_threshold_pct": 2.0,
-        "high_sga_ratio_threshold_pct": 3.0,
-        "revenue_pct_change_risk_threshold": 5.0,
-        "high_revenue_pct_change_threshold": 20.0,
-
-        "months_to_analyze": 8,
-        "top_entity_impacts": 5,
-        "lookback_periods": 10,
-    }
-
-    # Excel Processing Constants
-    EXCEL_PROCESSING = {
-        "max_sheet_name_length": 31,
-        "header_scan_rows": 40,
-        "data_row_offset": 2,
-        "account_code_min_digits": 4,
-        "progress_milestones": {
-            "start": 10,
-            "load": 15,
-            "config": 20,
-            "ai_thresholds": 25,
-            "analysis_start": 30,
-            "analysis_complete": 85,
-            "storage": 90,
-            "finalize": 95,
-            "complete": 100
-        }
-    }
-
-    # Core Analysis Configuration
-    DEFAULT_CONFIG = {
-        "materiality_vnd": 1_000_000_000,
-        "recurring_pct_threshold": 0.05,
-        "revenue_opex_pct_threshold": 0.10,
-        "bs_pct_threshold": 0.05,
-        "recurring_code_prefixes": ["6321", "635", "515"],
-        "min_trend_periods": 3,
-        "gm_drop_threshold_pct": 0.01,
-        "dep_pct_only_prefixes": ["217", "632"],
-        "customer_column_hints": [
-            "customer", "khách", "khach", "client", "buyer", "entity",
-            "company", "subsidiary", "parent company", "bwid", "vc1", "vc2", "vc3", "logistics"
-        ],
-
-        # Include all analysis configurations
-        **REVENUE_ANALYSIS,
-        **EXCEL_PROCESSING,
-
-        # Additional settings
-        "use_llm_analysis": False,
-        "llm_model": "gpt-4o",
-        "year_range": ["2024", "2025", "2026", "2027", "2028", "2029", "2030"],
-        "trend_window_max": 5,
-        "zero_division_replacement": 0.0,
-        "numeric_fill_value": 0.0,
-        "percentage_multiplier": 100.0,
-    }
-
-@lru_cache()
-def get_settings() -> Settings:
-    """Get cached application settings."""
-    settings = Settings()
-    settings.__post_init__()
-    return settings
-
-@lru_cache()
-def get_analysis_config() -> dict:
-    """Get cached analysis configuration."""
-    from ..data.data_utils import DEFAULT_CONFIG
-    return DEFAULT_CONFIG.copy()
+# Export new unified config functions for new code
+__all__ = [
+    "get_settings",
+    "get_analysis_config",
+    "get_unified_config",
+    "UnifiedConfig",
+    "Settings"  # For backward compatibility
+]

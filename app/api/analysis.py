@@ -1,5 +1,5 @@
 # app/api/analysis.py
-"""Analysis endpoints."""
+"""Analysis endpoints with enhanced validation."""
 
 import io
 import json
@@ -7,7 +7,7 @@ import queue
 from contextlib import redirect_stdout, redirect_stderr
 from typing import List, Optional
 
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends, Request
 from fastapi.responses import StreamingResponse, JSONResponse
 
 from ..models.analysis import (
@@ -16,12 +16,19 @@ from ..models.analysis import (
 )
 from ..services.analysis_service import analysis_service
 from ..utils.helpers import build_config_overrides
+from ..utils.file_validation import validate_file_list, FileValidator
+from ..utils.input_sanitization import validate_analysis_parameters, sanitize_session_id
 from ..core.config import get_settings, Settings
+from ..core.exceptions import FileProcessingError, ValidationError, SessionError
+from ..utils.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api", tags=["analysis"])
 
 @router.post("/process")
 async def process_python_analysis(
+    request: Request,
     excel_files: List[UploadFile] = File(...),
     mapping_file: Optional[UploadFile] = File(None),
     materiality_vnd: Optional[float] = Form(None),
@@ -35,52 +42,136 @@ async def process_python_analysis(
     customer_column_hints: Optional[str] = Form(None),
     settings: Settings = Depends(get_settings)
 ):
-    """Process Excel files using Python-based analysis."""
+    """Process Excel files using Python-based analysis with comprehensive validation."""
+    logger.info(f"Processing {len(excel_files)} files for Python analysis")
+
     try:
+        # 1. Validate uploaded files
+        validation_results = await validate_file_list(excel_files, max_files=10)
+
+        # Check if any files failed validation
+        failed_files = [result for result in validation_results if not result.get('is_valid', False)]
+        if failed_files:
+            error_details = []
+            for failed in failed_files:
+                error_details.extend(failed.get('errors', []))
+
+            raise FileProcessingError(
+                f"File validation failed for {len(failed_files)} file(s)",
+                details="; ".join(error_details)
+            )
+
+        # 2. Validate and sanitize analysis parameters
+        params = {
+            'materiality_vnd': materiality_vnd,
+            'recurring_pct_threshold': recurring_pct_threshold,
+            'revenue_opex_pct_threshold': revenue_opex_pct_threshold,
+            'bs_pct_threshold': bs_pct_threshold,
+            'recurring_code_prefixes': recurring_code_prefixes,
+            'min_trend_periods': min_trend_periods,
+            'gm_drop_threshold_pct': gm_drop_threshold_pct,
+            'dep_pct_only_prefixes': dep_pct_only_prefixes,
+            'customer_column_hints': customer_column_hints,
+        }
+
+        validated_params = validate_analysis_parameters(params)
+
         # Build configuration overrides
         config_overrides = build_config_overrides(
-            materiality_vnd=materiality_vnd,
-            recurring_pct_threshold=recurring_pct_threshold,
-            revenue_opex_pct_threshold=revenue_opex_pct_threshold,
-            bs_pct_threshold=bs_pct_threshold,
-            recurring_code_prefixes=recurring_code_prefixes,
-            min_trend_periods=min_trend_periods,
-            gm_drop_threshold_pct=gm_drop_threshold_pct,
-            dep_pct_only_prefixes=dep_pct_only_prefixes,
-            customer_column_hints=customer_column_hints,
+            materiality_vnd=validated_params.materiality_vnd,
+            recurring_pct_threshold=validated_params.recurring_pct_threshold,
+            revenue_opex_pct_threshold=validated_params.revenue_opex_pct_threshold,
+            bs_pct_threshold=validated_params.bs_pct_threshold,
+            recurring_code_prefixes=validated_params.recurring_code_prefixes,
+            min_trend_periods=validated_params.min_trend_periods,
+            gm_drop_threshold_pct=validated_params.gm_drop_threshold_pct,
+            dep_pct_only_prefixes=validated_params.dep_pct_only_prefixes,
+            customer_column_hints=validated_params.customer_column_hints,
         )
 
-        # Process files
+        # 3. Process files
         xlsx_bytes = await analysis_service.process_python_analysis(
             excel_files=excel_files,
             mapping_file=mapping_file,
             config_overrides=config_overrides
         )
 
+        logger.info("Python analysis completed successfully")
         return StreamingResponse(
             iter([xlsx_bytes]),
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers={"Content-Disposition": 'attachment; filename="variance_output.xlsx"'}
+            headers={"Content-Disposition": 'attachment; filename="variance_analysis_output.xlsx"'}
         )
 
-    except HTTPException:
+    except (FileProcessingError, ValidationError, HTTPException):
         raise
     except Exception as e:
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        logger.error(f"Unexpected error in Python analysis: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="An unexpected error occurred during analysis. Please try again."
+        )
 
 @router.post("/start-analysis", response_model=AnalysisSession)
 async def start_ai_analysis(
+    request: Request,
     excel_files: List[UploadFile] = File(...)
 ):
-    """Start AI-powered analysis."""
-    session = await analysis_service.start_ai_analysis(excel_files)
-    return session
+    """Start AI-powered analysis with file validation."""
+    logger.info(f"Starting AI analysis for {len(excel_files)} files")
+
+    try:
+        # 1. Validate uploaded files
+        validation_results = await validate_file_list(excel_files, max_files=5)  # Lower limit for AI
+
+        # Check if any files failed validation
+        failed_files = [result for result in validation_results if not result.get('is_valid', False)]
+        if failed_files:
+            error_details = []
+            for failed in failed_files:
+                error_details.extend(failed.get('errors', []))
+
+            raise FileProcessingError(
+                f"File validation failed for {len(failed_files)} file(s)",
+                details="; ".join(error_details)
+            )
+
+        # 2. Start AI analysis
+        session = await analysis_service.start_ai_analysis(excel_files)
+
+        logger.info(f"AI analysis session started: {session.session_id}")
+        return session
+
+    except (FileProcessingError, ValidationError, HTTPException):
+        raise
+    except Exception as e:
+        logger.error(f"Failed to start AI analysis: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to start AI analysis. Please check your files and try again."
+        )
 
 @router.get("/logs/{session_id}")
-async def stream_logs(session_id: str):
-    """Stream analysis logs using Server-Sent Events."""
+async def stream_logs(
+    session_id: str,
+    request: Request
+):
+    """Stream analysis logs using Server-Sent Events with validation."""
+    # Validate session ID
+    clean_session_id = sanitize_session_id(session_id)
+
+    # Check if session exists
+    session = analysis_service.get_session(clean_session_id)
+    if not session:
+        raise SessionError(
+            f"Session {clean_session_id} not found",
+            session_id=clean_session_id
+        )
+
+    logger.info(f"Streaming logs for session: {clean_session_id}")
+
     def generate():
-        if session_id not in analysis_service.log_streams:
+        if clean_session_id not in analysis_service.log_streams:
             yield f"data: {json.dumps({'error': 'Session not found'})}\n\n"
             return
 

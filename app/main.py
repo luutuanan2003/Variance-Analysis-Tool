@@ -13,32 +13,38 @@ This is the restructured version following FastAPI best practices:
 from pathlib import Path
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 from fastapi.exceptions import RequestValidationError
 
 from .core.config import get_settings
+from .core.unified_config import get_unified_config
 from .core.exceptions import (
-    AnalysisError, analysis_error_handler, validation_error_handler,
+    AnalysisError, FileProcessingError, ValidationError, DataQualityError,
+    analysis_error_handler, validation_error_handler,
     http_error_handler, general_error_handler
 )
 from .api import health, analysis
 from .services.analysis_service import analysis_service
 from .utils.logging_config import setup_logging, get_logger
+from .middleware import ValidationMiddleware, SecurityHeadersMiddleware, RequestLoggingMiddleware
+from .middleware.config_middleware import ConfigValidationMiddleware, ConfigMonitoringMiddleware
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan events."""
+    # Get unified configuration
+    config = get_unified_config()
+
     # Setup logging
-    log_level = "DEBUG" if get_settings().debug else "INFO"
-    setup_logging(level=log_level, log_file="logs/variance_analysis.log")
+    log_level = "DEBUG" if config.app.debug else "INFO"
+    setup_logging(level=log_level, log_file=config.app.log_file)
     logger = get_logger(__name__)
 
     # Startup
-    settings = get_settings()
-    logger.info(f"🚀 Starting {settings.app_name} v{settings.app_version}")
+    logger.info(f"🚀 Starting {config.app.app_name} v{config.app.app_version}")
 
     # Setup periodic cleanup for old sessions
     import asyncio
@@ -49,7 +55,7 @@ async def lifespan(app: FastAPI):
         while True:
             try:
                 analysis_service.cleanup_old_sessions(
-                    max_age_minutes=settings.session_timeout_minutes
+                    max_age_minutes=config.security.session_timeout_minutes
                 )
                 await asyncio.sleep(300)  # Run every 5 minutes
             except Exception as e:
@@ -71,7 +77,8 @@ async def lifespan(app: FastAPI):
 
 def create_application() -> FastAPI:
     """Create and configure FastAPI application."""
-    settings = get_settings()
+    config = get_unified_config()
+    settings = config.app
 
     app = FastAPI(
         title=settings.app_name,
@@ -82,6 +89,14 @@ def create_application() -> FastAPI:
         redoc_url="/redoc" if settings.debug else None,
     )
 
+    # Add middleware stack (order matters - first added = outermost layer!)
+    app.add_middleware(SecurityHeadersMiddleware)
+    app.add_middleware(ConfigValidationMiddleware)
+    app.add_middleware(ValidationMiddleware, max_request_size=config.file_processing.max_file_size)
+    if settings.debug:
+        app.add_middleware(RequestLoggingMiddleware)
+        app.add_middleware(ConfigMonitoringMiddleware)
+
     # Configure CORS
     app.add_middleware(
         CORSMiddleware,
@@ -91,9 +106,13 @@ def create_application() -> FastAPI:
         allow_headers=settings.cors_headers,
     )
 
-    # Register exception handlers
+    # Register exception handlers (order matters - most specific first)
+    app.add_exception_handler(FileProcessingError, analysis_error_handler)
+    app.add_exception_handler(ValidationError, analysis_error_handler)
+    app.add_exception_handler(DataQualityError, analysis_error_handler)
     app.add_exception_handler(AnalysisError, analysis_error_handler)
     app.add_exception_handler(RequestValidationError, validation_error_handler)
+    app.add_exception_handler(HTTPException, http_error_handler)
     app.add_exception_handler(Exception, general_error_handler)
 
     # Include routers
@@ -145,11 +164,11 @@ from .analysis.revenue_analysis import (
 )
 
 @app.post("/analyze-revenue")
-async def analyze_revenue_legacy(excel_file):
+async def analyze_revenue_legacy(request: Request, excel_file):
     """Legacy revenue analysis endpoint."""
     # This can redirect to the new endpoint or maintain compatibility
     from .api.analysis import analyze_revenue_variance
-    return await analyze_revenue_variance(excel_file)
+    return await analyze_revenue_variance(request, excel_file)
 
 # Add backward compatibility for /process endpoint
 from fastapi import UploadFile, File, Form
@@ -157,6 +176,7 @@ from typing import List, Optional
 
 @app.post("/process")
 async def process_legacy(
+    request: Request,
     excel_files: List[UploadFile] = File(...),
     mapping_file: Optional[UploadFile] = File(None),
     materiality_vnd: Optional[float] = Form(None),
@@ -173,6 +193,7 @@ async def process_legacy(
     from .api.analysis import process_python_analysis
     from .core.config import get_settings
     return await process_python_analysis(
+        request=request,
         excel_files=excel_files,
         mapping_file=mapping_file,
         materiality_vnd=materiality_vnd,
@@ -189,30 +210,30 @@ async def process_legacy(
 
 # Add backward compatibility for AI analysis endpoints
 @app.post("/start_analysis")
-async def start_analysis_legacy(excel_files: List[UploadFile] = File(...)):
+async def start_analysis_legacy(request: Request, excel_files: List[UploadFile] = File(...)):
     """Legacy /start_analysis endpoint - redirects to /api/start-analysis."""
     from .api.analysis import start_ai_analysis
-    return await start_ai_analysis(excel_files)
+    return await start_ai_analysis(request, excel_files)
 
 @app.get("/logs/{session_id}")
-async def logs_legacy(session_id: str):
+async def logs_legacy(request: Request, session_id: str):
     """Legacy /logs/{session_id} endpoint - redirects to /api/logs/{session_id}."""
     from .api.analysis import stream_logs
-    return await stream_logs(session_id)
+    return await stream_logs(session_id, request)
 
 @app.get("/download/{session_id}")
-async def download_legacy(session_id: str):
+async def download_legacy(request: Request, session_id: str):
     """Legacy /download/{session_id} endpoint - redirects to /api/download/{session_id}."""
     from .api.analysis import download_main_result
-    return await download_main_result(session_id)
+    return await download_main_result(session_id, request)
 
 if __name__ == "__main__":
     import uvicorn
-    settings = get_settings()
+    config = get_unified_config()
     uvicorn.run(
         "app.main:app",
         host="0.0.0.0",
         port=8000,
-        reload=settings.debug,
+        reload=config.app.debug,
         log_level="info"
     )
