@@ -153,7 +153,7 @@ def process_all_python_mode(
             # Create Month to Month Analysis sheet (latest 2 months only)
             logger.info("📝 Creating 'Month to Month Analysis' sheet (latest 2 months)...")
             month_to_month_ws = wb.create_sheet(title="Month to Month Analysis")
-            _add_month_to_month_analysis_to_sheet(month_to_month_ws, revenue_analysis, variance_analysis)
+            _add_month_to_month_analysis_to_sheet(month_to_month_ws, revenue_analysis, variance_analysis, first_file_bytes, first_file_name)
             logger.info("✅ Month to Month Analysis sheet added successfully")
 
     except Exception as e:

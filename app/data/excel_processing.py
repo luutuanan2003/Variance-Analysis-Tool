@@ -1289,7 +1289,7 @@ def _filter_to_latest_two_months(data_dict: dict, target_months: list) -> dict:
     return filtered
 
 
-def _add_month_to_month_analysis_to_sheet(ws, revenue_analysis: dict, variance_analysis: dict):
+def _add_month_to_month_analysis_to_sheet(ws, revenue_analysis: dict, variance_analysis: dict, xl_bytes: bytes, filename: str):
     """
     Add a 'Month to Month Analysis' sheet focusing only on the last two consecutive months.
 
@@ -1301,8 +1301,13 @@ def _add_month_to_month_analysis_to_sheet(ws, revenue_analysis: dict, variance_a
         ws: Worksheet to write to
         revenue_analysis: Full revenue analysis dictionary
         variance_analysis: Full variance analysis dictionary
+        xl_bytes: Excel file bytes to read row 4 from
+        filename: Filename for subsidiary extraction
     """
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from ..utils.logging_config import get_logger
+
+    logger = get_logger(__name__)
 
     # Define styles
     header_font = Font(bold=True, color="FFFFFF")
@@ -1326,17 +1331,102 @@ def _add_month_to_month_analysis_to_sheet(ws, revenue_analysis: dict, variance_a
             return f"{pct:+.1f}%"
         return "N/A"
 
-    # Determine the last two months from the data
-    months_analyzed = revenue_analysis.get('months_analyzed', [])
-    if len(months_analyzed) < 2:
-        ws[f"A1"] = "ERROR: Insufficient data - need at least 2 months for month-to-month analysis"
+    # Read row 4 to find "End of [Month]" text and determine which month to analyze
+    logger.info("🔍 Reading row 4 to find 'End of [Month]' text...")
+
+    try:
+        # Load the Excel file using pandas
+        import io
+        pl_df = pd.read_excel(io.BytesIO(xl_bytes), sheet_name="PL Breakdown", header=None)
+
+        # Read row 4 (index 3 in pandas, 0-indexed)
+        row_4_values = pl_df.iloc[3].fillna('').astype(str).tolist()
+        logger.info(f"🔍 Row 4 values (first 10): {row_4_values[:10]}")
+
+        # Find month pattern in row 4
+        # Can be either "End of [Month]" or "From ... to [Month]"
+        MONTH_TOKENS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+        MONTH_ORDER = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+        target_month_name = None
+        for cell_value in row_4_values:
+            cell_str = str(cell_value).strip()
+            cell_lower = cell_str.lower()
+
+            # Check for "End of [Month]" pattern
+            if "end of" in cell_lower:
+                for month_tok in MONTH_TOKENS:
+                    if month_tok in cell_str:
+                        target_month_name = month_tok
+                        logger.info(f"✅ Found 'End of' text in row 4: '{cell_str}'")
+                        logger.info(f"✅ Extracted target month: {target_month_name}")
+                        break
+            # Check for "to [Month]" pattern (e.g., "From Jan 2025 to May 2025")
+            elif "to" in cell_lower:
+                # Find the month after "to"
+                parts = cell_str.split("to")
+                if len(parts) >= 2:
+                    after_to = parts[-1].strip()
+                    for month_tok in MONTH_TOKENS:
+                        if month_tok in after_to:
+                            target_month_name = month_tok
+                            logger.info(f"✅ Found 'to [Month]' text in row 4: '{cell_str}'")
+                            logger.info(f"✅ Extracted target month: {target_month_name}")
+                            break
+
+            if target_month_name:
+                break
+
+        if not target_month_name:
+            logger.error("⚠️  Could not find month pattern in row 4")
+            logger.error(f"   Searched for 'End of [Month]' or 'to [Month]' patterns")
+            ws[f"A1"] = "ERROR: Could not find month information in row 4"
+            ws[f"A1"].font = Font(bold=True, color="FF0000", size=14)
+            return
+
+        # Find the previous month
+        target_month_idx = MONTH_ORDER.index(target_month_name)
+        if target_month_idx == 0:
+            logger.error("⚠️  Target month is January - no previous month in same year")
+            ws[f"A1"] = "ERROR: Cannot analyze month-to-month for January (no previous month)"
+            ws[f"A1"].font = Font(bold=True, color="FF0000", size=14)
+            return
+
+        prev_month_name = MONTH_ORDER[target_month_idx - 1]
+        logger.info(f"✅ Previous month: {prev_month_name}")
+
+        # Now match these month names to the actual month strings in revenue_analysis
+        # The months_analyzed will have format like "Jan 2025", "Feb 2025", etc.
+        all_months = revenue_analysis.get('months_analyzed', [])
+        logger.info(f"🔍 Available months in analysis: {all_months}")
+
+        curr_month = None
+        prev_month = None
+
+        for month_str in all_months:
+            if target_month_name in month_str:
+                curr_month = month_str
+            if prev_month_name in month_str:
+                prev_month = month_str
+
+        if not curr_month or not prev_month:
+            logger.error(f"⚠️  Could not match extracted months to analysis data")
+            logger.error(f"   Looking for: {prev_month_name} and {target_month_name}")
+            logger.error(f"   Available: {all_months}")
+            ws[f"A1"] = f"ERROR: Could not find {prev_month_name} and {target_month_name} in analysis data"
+            ws[f"A1"].font = Font(bold=True, color="FF0000", size=14)
+            return
+
+        logger.info(f"✅ Matched months for analysis: {prev_month} → {curr_month}")
+
+    except Exception as e:
+        logger.error(f"⚠️  Error reading row 4 from Excel: {e}", exc_info=True)
+        ws[f"A1"] = f"ERROR: Failed to read row 4 from Excel file: {str(e)}"
         ws[f"A1"].font = Font(bold=True, color="FF0000", size=14)
         return
 
-    # Get the last two months
-    prev_month = months_analyzed[-2]
-    curr_month = months_analyzed[-1]
     target_months = [prev_month, curr_month]
+    logger.info(f"✅ Selected months for Month to Month Analysis: {prev_month} → {curr_month}")
 
     row = 1
 

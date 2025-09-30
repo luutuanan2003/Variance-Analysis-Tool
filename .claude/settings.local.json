@@ -16,7 +16,8 @@
       "Bash(xargs kill:*)",
       "Bash(pip install:*)",
       "Bash(env)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Read(//dev/**)"
     ],
     "deny": [],
     "ask": []
