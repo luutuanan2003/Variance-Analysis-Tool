@@ -20,8 +20,11 @@ logger = get_logger(__name__)
 
 
 class LLMFinancialAnalyzer:
-    def __init__(self, model_name: str = "gpt-4o"):
+    def __init__(self, model_name: str = "gpt-4o", progress_callback=None, initial_progress=0):
         """Initialize LLM analyzer with OpenAI GPT model."""
+        self.progress_callback = progress_callback
+        self.current_progress = initial_progress  # Start from the current progress
+        self.progress_increment = 1  # Default 1% increment per API call
         # Debug information for cloud deployments
         logger.info(f"🔧 Python version: {sys.version}")
         logger.info(f"🔧 Environment: {'RENDER' if os.getenv('RENDER') else 'LOCAL'}")
@@ -214,6 +217,12 @@ class LLMFinancialAnalyzer:
             )
 
             print(f"   ✅ OpenAI API call completed")
+
+            # Update progress by increment after successful API call (200 response)
+            if self.progress_callback:
+                self.current_progress = min(self.current_progress + self.progress_increment, 100)
+                self.progress_callback(self.current_progress, "Processing AI analysis...")
+
             print(f"      • Response type: {type(response)}")
 
             # Handle both standard OpenAI response and direct API response
@@ -1331,14 +1340,18 @@ CRITICAL: Keep explanations SHORT and focused. Avoid lengthy detailed analysis i
 🚨 IMPORTANT: Any response that is not valid JSON will cause system failure. Match the above format exactly with Vietnamese business context."""
 
     def _create_raw_data_prompt(self, bs_csv: str, pl_csv: str, subsidiary: str, config: dict) -> str:
-        """Create analysis prompt with full raw Excel data for comprehensive AI analysis."""
-        _ = config  # AI determines all parameters autonomously
+        """Create analysis prompt with full raw Excel data matching Python mode logic."""
+        # Extract actual config values
+        materiality_vnd = config.get("materiality_vnd", 1000000000)
+        bs_pct_threshold = config.get("bs_pct_threshold", 0.05)
+        recurring_pct_threshold = config.get("recurring_pct_threshold", 0.05)
+        revenue_opex_pct_threshold = config.get("revenue_opex_pct_threshold", 0.10)
 
         return f"""
 FINANCIAL VARIANCE ANALYSIS REQUEST
 
 Company: {subsidiary}
-Analysis Type: Comprehensive AI-driven anomaly detection
+Analysis Type: Rule-based anomaly detection (AI-powered)
 
 === BALANCE SHEET DATA ===
 {bs_csv}
@@ -1348,26 +1361,54 @@ Analysis Type: Comprehensive AI-driven anomaly detection
 
 === ANALYSIS INSTRUCTIONS ===
 
-You are a senior Vietnamese financial auditor. Analyze the above Excel data and detect ALL significant variances and anomalies.
+You are a senior Vietnamese financial auditor. Analyze the Excel data following the EXACT same rules as Python mode:
 
-🎯 KEY FOCUS AREAS (Vietnamese Chart of Accounts):
-1. REVENUE (511*): Analyze all revenue patterns, growth rates, seasonality
-2. UTILITIES (627*, 641*): Check operational efficiency and scaling patterns
-3. INTEREST (515*, 635*): Examine financial structure changes
-4. ALL OTHER ACCOUNTS: Review for material changes and unusual patterns
+🎯 STEP 1: IDENTIFY ALL MONTH COLUMNS
+- Look for columns with month names (Jan 2025, Feb 2025, etc.)
+- Identify the LAST TWO months with data
+- Calculate month-over-month changes between these two periods
 
-📊 ANALYSIS APPROACH:
-1. Compare latest 2 periods in the data (rightmost columns)
-2. Calculate actual percentage and absolute changes
-3. Determine materiality based on company size and account nature
-4. Focus on accounts with significant changes (>10% or material amounts)
-5. Provide Vietnamese business context and practical explanations
+📊 STEP 2: BALANCE SHEET ANALYSIS
+Apply these SPECIFIC rules for Balance Sheet accounts:
+- **Materiality Threshold**: {materiality_vnd:,} VND
+- **Percentage Threshold**: {bs_pct_threshold * 100}%
+- **Rule**: Flag if absolute change >= {materiality_vnd:,} VND AND percentage change > {bs_pct_threshold * 100}%
+- **Status**: "Needs Review"
+- **Trigger**: "BS >{bs_pct_threshold * 100}% & ≥{materiality_vnd/1e9}B"
 
-💰 MATERIALITY GUIDELINES:
-- Large companies (>1T VND revenue): 500M VND threshold
-- Medium companies (100B-1T VND): 200M VND threshold
-- Small companies (<100B VND): 50M VND threshold
-- Always explain your materiality reasoning
+💰 STEP 3: PROFIT & LOSS ANALYSIS
+Apply different rules based on account classification:
+
+**3A. RECURRING ACCOUNTS** (621*, 622*, 623*, 627*, 641*, 642*):
+- **Rule**: Flag if absolute change >= {materiality_vnd:,} VND AND percentage change > {recurring_pct_threshold * 100}%
+- **Trigger**: "Recurring >{recurring_pct_threshold * 100}% & ≥{materiality_vnd/1e9}B"
+
+**3B. REVENUE/OPEX ACCOUNTS** (511*, 515*, 632*, 635*, and others):
+- **Rule**: Flag if percentage change > {revenue_opex_pct_threshold * 100}% OR absolute change >= {materiality_vnd:,} VND
+- **Trigger**: "Revenue/OPEX >{revenue_opex_pct_threshold * 100}% or ≥{materiality_vnd/1e9}B"
+
+**3C. DEPRECIATION ACCOUNTS** (214*, 627*):
+- **Rule**: Flag if percentage change > {recurring_pct_threshold * 100}% (no materiality requirement)
+- **Trigger**: "Depreciation % change > threshold"
+
+🔍 STEP 4: GROSS MARGIN ANALYSIS
+- Calculate Gross Margin = (511* Revenue - 632* COGS) / 511* Revenue
+- Compare month-over-month gross margin percentage
+- Flag significant drops or unusual patterns
+
+📋 STEP 5: VIETNAMESE BUSINESS CONTEXT
+For each anomaly, provide SHORT, PRACTICAL explanation:
+- What this account typically represents
+- Common causes in Vietnamese business environment
+- Seasonal factors (Tet, fiscal year-end, monsoon)
+- Regulatory considerations (VAT, tax, labor law)
+
+⚠️ CRITICAL REQUIREMENTS:
+1. Only flag accounts that meet the SPECIFIC threshold rules above
+2. Use the SAME classification logic as Python mode
+3. Calculate ACTUAL values from the Excel data (not zeros)
+4. Keep explanations SHORT (2-3 sentences max)
+5. Return ONLY valid JSON array - no markdown, no commentary
 
 {self._get_system_prompt()}"""
         def cur(x):

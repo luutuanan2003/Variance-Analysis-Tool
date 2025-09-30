@@ -188,6 +188,8 @@ def build_anoms_ai_mode(
     excel_bytes: bytes,
     filename: str,
     CONFIG: dict,
+    progress_callback=None,
+    initial_progress=0,
 ) -> pd.DataFrame:
     """AI-only anomaly detection using complete raw Excel file."""
     anomalies: list[dict] = []
@@ -208,7 +210,7 @@ def build_anoms_ai_mode(
 
     logger.info(f"🧠 Starting AI analysis for '{sub}'...")
     try:
-        llm_analyzer = LLMFinancialAnalyzer(CONFIG.get("llm_model", "gpt-4o"))
+        llm_analyzer = LLMFinancialAnalyzer(CONFIG.get("llm_model", "gpt-4o"), progress_callback=progress_callback, initial_progress=initial_progress)
         logger.info(f"✅ AI analyzer initialized with model: {CONFIG.get('llm_model', 'gpt-4o')}")
 
         logger.info("🔍 Running AI analysis on complete raw Excel file...")
@@ -218,12 +220,21 @@ def build_anoms_ai_mode(
         logger.info(f"📋 Converting {len(llm_anomalies)} AI results to report format...")
         for idx, anom in enumerate(llm_anomalies, 1):
             logger.debug(f"   • Processing anomaly {idx}: Account {anom.get('account_code', 'Unknown')}")
+
+            # Skip anomalies where both change_amount and change_percent are 0
+            change_amount = anom.get("change_amount", 0)
+            change_percent = anom.get("change_percent", 0)
+
+            if change_amount == 0 and change_percent == 0:
+                logger.debug(f"   • Skipping anomaly {idx}: No change detected (both amount and percent are 0)")
+                continue
+
             anomalies.append({
                 "Subsidiary": anom["subsidiary"],
                 "Account": anom["account_code"],
                 "Period": "Current",
-                "Pct Change": anom["change_percent"],
-                "Abs Change (VND)": int(anom["change_amount"]),
+                "Pct Change": change_percent,
+                "Abs Change (VND)": int(change_amount),
                 "Trigger(s)": anom["rule_name"],
                 "Suggested likely cause": anom["details"],
                 "Status": "AI Analysis",
@@ -232,7 +243,25 @@ def build_anoms_ai_mode(
         logger.info("✅ Successfully converted all AI results to report format")
 
         logger.info(f"✅ AI anomaly detection completed for '{sub}' - returning {len(anomalies)} records")
-        return pd.DataFrame(anomalies)
+
+        # Create DataFrame and filter out zero changes
+        result_df = pd.DataFrame(anomalies)
+
+        if not result_df.empty:
+            def is_zero_or_empty(val):
+                if pd.isna(val) or val == "" or val == 0 or val == "0":
+                    return True
+                try:
+                    return float(val) == 0
+                except (ValueError, TypeError):
+                    return False
+
+            # Keep only rows where at least one of the change fields is non-zero
+            mask = ~(result_df["Pct Change"].apply(is_zero_or_empty) & result_df["Abs Change (VND)"].apply(is_zero_or_empty))
+            result_df = result_df[mask].reset_index(drop=True)
+            logger.info(f"✅ After filtering zero changes: {len(result_df)} records remaining")
+
+        return result_df
 
     except Exception as e:
         logger.error(f"❌ AI analysis failed for '{sub}': {e}", exc_info=True)
@@ -272,6 +301,11 @@ def build_anoms_python_mode(
     for _, row in bs_mom.iterrows():
         abs_delta = abs(row["Delta"])
         pct_change = row["Pct Change"]
+
+        # Skip if both change amount and percent are 0
+        if abs_delta == 0 and (pd.isna(pct_change) or pct_change == 0):
+            continue
+
         if (abs_delta >= materiality and pd.notna(pct_change) and abs(pct_change) > CONFIG["bs_pct_threshold"]):
             anomalies.append({
                 "Subsidiary": sub,
@@ -296,6 +330,11 @@ def build_anoms_python_mode(
         abs_delta = abs(row["Delta"])
         pct_change = row["Pct Change"]
         code = row["Account Code"]
+
+        # Skip if both change amount and percent are 0
+        if abs_delta == 0 and (pd.isna(pct_change) or pct_change == 0):
+            continue
+
         account_class = classify_pl_account(code, CONFIG)
         trigger = ""
 
@@ -348,6 +387,20 @@ def build_anoms_python_mode(
             main_df = pd.concat([main_df, acct_anoms_df], ignore_index=True)
         else:
             main_df = acct_anoms_df
+
+    # Filter out rows where both "Pct Change" and "Abs Change (VND)" are 0 or empty
+    if not main_df.empty:
+        def is_zero_or_empty(val):
+            if pd.isna(val) or val == "" or val == 0 or val == "0":
+                return True
+            try:
+                return float(val) == 0
+            except (ValueError, TypeError):
+                return False
+
+        # Keep only rows where at least one of the change fields is non-zero
+        mask = ~(main_df["Pct Change"].apply(is_zero_or_empty) & main_df["Abs Change (VND)"].apply(is_zero_or_empty))
+        main_df = main_df[mask].reset_index(drop=True)
 
     return main_df
 

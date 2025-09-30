@@ -212,7 +212,7 @@ def process_all_ai_mode(
 
         # === AI ANALYSIS ===
         logger.info(f"🤖 Starting AI analysis for '{sub}'...")
-        anoms = build_anoms_ai_mode(sub, xl_bytes, fname, CONFIG)
+        anoms = build_anoms_ai_mode(sub, xl_bytes, fname, CONFIG, progress_callback=progress_callback, initial_progress=file_start + 5)
 
         if progress_callback:
             progress_callback(file_end - 5, f"AI analysis complete for {sub}")

@@ -115,6 +115,10 @@ def analyze_month_over_month_variance(monthly_totals: dict) -> List[dict]:
         absolute_change = curr_value - prev_value
         percentage_change = (absolute_change / prev_value * 100) if prev_value != 0 else 0
 
+        # Skip if both absolute and percentage change are 0
+        if absolute_change == 0 and percentage_change == 0:
+            continue
+
         variance_analysis.append({
             'period_from': prev_month,
             'period_to': curr_month,
@@ -183,6 +187,10 @@ def analyze_revenue_stream_contributions(df: pd.DataFrame, month_cols: List[str]
 
             absolute_change = curr_value - prev_value
             percentage_change = (absolute_change / prev_value * 100) if prev_value != 0 else 0
+
+            # Skip if both absolute and percentage change are 0
+            if absolute_change == 0 and percentage_change == 0:
+                continue
 
             month_changes.append({
                 'period_from': prev_month,
@@ -291,19 +299,21 @@ def analyze_vendor_customer_impact(revenue_streams: dict, significance_threshold
                 total_change, positive_contributors, negative_contributors
             )
 
-            period_impacts.append({
-                'period_from': prev_month,
-                'period_to': curr_month,
-                'total_change': total_change,
-                'net_effect_calculated': net_effect,
-                'net_effect_explanation': net_effect_explanation,
-                'positive_contributors': positive_contributors[:3],  # Top 3 positive
-                'negative_contributors': negative_contributors[:3],  # Top 3 negative
-                'total_positive_change': total_positive_change,
-                'total_negative_change': total_negative_change,
-                'all_contributing_entities': entity_contributions[:10],  # Top 10 overall
-                'entities_with_significant_change': len(entity_contributions)
-            })
+            # Skip if total_change is 0
+            if total_change != 0:
+                period_impacts.append({
+                    'period_from': prev_month,
+                    'period_to': curr_month,
+                    'total_change': total_change,
+                    'net_effect_calculated': net_effect,
+                    'net_effect_explanation': net_effect_explanation,
+                    'positive_contributors': positive_contributors[:3],  # Top 3 positive
+                    'negative_contributors': negative_contributors[:3],  # Top 3 negative
+                    'total_positive_change': total_positive_change,
+                    'total_negative_change': total_negative_change,
+                    'all_contributing_entities': entity_contributions[:10],  # Top 10 overall
+                    'entities_with_significant_change': len(entity_contributions)
+                })
 
         vendor_impact_analysis[account] = {
             'account_name': account,
@@ -889,6 +899,10 @@ def analyze_comprehensive_revenue_impact_from_bytes(xl_bytes: bytes, filename: s
                 change = curr_val - prev_val
                 pct_change = (change / prev_val * 100) if prev_val != 0 else 0
 
+                # Skip if both change and pct_change are 0
+                if change == 0 and pct_change == 0:
+                    continue
+
                 account_changes.append({
                     'from': prev_month,
                     'to': curr_month,
@@ -1026,6 +1040,11 @@ def analyze_comprehensive_revenue_impact_from_bytes(xl_bytes: bytes, filename: s
                     curr_val = data['monthly_totals'][curr_m]
                     delta = curr_val - prev_val
                     pct = (delta / prev_val * 100.0) if prev_val != 0 else 0.0
+
+                    # Skip if both delta and pct are 0
+                    if delta == 0 and pct == 0:
+                        continue
+
                     account_changes.append({
                         'from': prev_m, 'to': curr_m,
                         'change': delta, 'pct_change': pct,
@@ -1145,6 +1164,10 @@ def analyze_comprehensive_revenue_impact_from_bytes(xl_bytes: bytes, filename: s
                 change = curr_val - prev_val
                 pct_change = (change / prev_val * 100) if prev_val != 0 else 0
 
+                # Skip if both change and pct_change are 0
+                if change == 0 and pct_change == 0:
+                    continue
+
                 account_changes.append({
                     'from': prev_month,
                     'to': curr_month,
@@ -1224,6 +1247,10 @@ def analyze_comprehensive_revenue_impact_from_bytes(xl_bytes: bytes, filename: s
                 curr_val = data['monthly_totals'][curr_month]
                 change = curr_val - prev_val
                 pct_change = (change / prev_val * 100) if prev_val != 0 else 0
+
+                # Skip if both change and pct_change are 0
+                if change == 0 and pct_change == 0:
+                    continue
 
                 account_changes.append({
                     'from': prev_month,
@@ -1459,6 +1486,10 @@ def analyze_revenue_impact_from_bytes(xl_bytes: bytes, filename: str, CONFIG: di
                     curr_val = data['monthly_totals'][curr_month]
                     change = curr_val - prev_val
                     pct_change = (change / prev_val * 100) if prev_val != 0 else 0
+
+                    # Skip if both change and pct_change are 0
+                    if change == 0 and pct_change == 0:
+                        continue
 
                     account_changes.append({
                         'from': prev_month,
