@@ -8,7 +8,10 @@ A comprehensive financial variance analysis tool that combines both traditional 
 - Manual configuration with detailed parameter controls
 - Traditional rule-based anomaly detection
 - Support for correlation/seasonality mapping files
-- Revenue impact analysis
+- **Comprehensive Revenue Analysis** with multiple analysis sheets:
+  - **Months Analysis**: Consolidated view of all analyzed months with revenue variance, legacy analysis, and account breakdowns (511, 632, 641, 642)
+  - **Month to Month Analysis**: Focused analysis of the last two months based on Excel file row 4 date (e.g., "End of May 2025" → analyzes Apr-May)
+- **Cleaned Data Sheets**: Automatically generated BS and PL cleaned sheets for each subsidiary
 - Fully customizable thresholds and rules
 
 ### 🤖 AI Analysis Tab
@@ -17,6 +20,7 @@ A comprehensive financial variance analysis tool that combines both traditional 
 - Focus on critical Vietnamese Chart of Accounts
 - Detailed business context explanations
 - No manual configuration required
+- **Cleaned Data Sheets**: Automatically generated BS and PL cleaned sheets in AI mode as well
 
 ## Quick Start
 
@@ -59,33 +63,91 @@ A comprehensive financial variance analysis tool that combines both traditional 
 4. Watch the progress as AI analyzes your data
 5. Download the AI-generated analysis report
 
+## Output Sheets
+
+### Python Analysis Output
+The analysis generates an Excel file with the following sheets:
+
+1. **Anomalies Summary**: Main anomaly detection results with status tracking
+2. **[Subsidiary]_BS_Cleaned**: Cleaned Balance Sheet data for each subsidiary
+3. **[Subsidiary]_PL_Cleaned**: Cleaned Profit & Loss data for each subsidiary
+4. **Months Analysis**: Consolidated analysis sheet containing:
+   - Revenue Variance Analysis (month-over-month changes)
+   - Legacy Revenue Analysis (historical trends)
+   - 511 Accounts Analysis (Revenue accounts)
+   - 632 Accounts Analysis (COGS - Raw Materials)
+   - 641 Accounts Analysis (Personnel expenses)
+   - 642 Accounts Analysis (Material expenses)
+5. **Month to Month Analysis**: Focused two-month comparison based on row 4 date in source file
+
+### AI Analysis Output
+Similar structure with AI-generated insights:
+1. **Anomalies Summary**: AI-detected anomalies with business context
+2. **[Subsidiary]_BS_Cleaned**: Cleaned Balance Sheet data
+3. **[Subsidiary]_PL_Cleaned**: Cleaned Profit & Loss data
+
 ## File Structure
 
 ```
-Merged-Variance-Analysis-Tool/
+Variance-Analysis-Tool/
 ├── app/
-│   ├── __init__.py
-│   ├── main.py          # FastAPI application
-│   ├── core.py          # Core analysis logic
-│   └── llm_analyzer.py  # AI analysis module
+│   ├── main.py                    # FastAPI application entry point
+│   ├── api/                       # API route handlers
+│   │   ├── health.py             # Health check endpoints
+│   │   └── analysis.py           # Analysis endpoints
+│   ├── core/                      # Core application components
+│   │   ├── unified_config.py     # Unified configuration system
+│   │   ├── config.py             # Legacy configuration
+│   │   ├── dependencies.py       # Dependency injection
+│   │   └── exceptions.py         # Custom exceptions
+│   ├── services/                  # Business logic layer
+│   │   ├── processing_service.py # Core processing orchestration
+│   │   └── analysis_service.py   # Analysis business logic
+│   ├── analysis/                  # Financial analysis modules
+│   │   ├── revenue_analysis.py   # Revenue variance analysis
+│   │   ├── anomaly_detection.py  # Anomaly detection
+│   │   └── llm_analyzer.py       # AI-powered analysis
+│   ├── data/                      # Data processing modules
+│   │   ├── excel_processing.py   # Excel file processing
+│   │   └── data_utils.py         # Data utilities
+│   ├── utils/                     # Utility functions
+│   │   ├── logging_config.py     # Structured logging
+│   │   ├── file_validation.py    # File security validation
+│   │   └── input_sanitization.py # Input sanitization
+│   └── middleware/                # Request/response middleware
+│       ├── validation_middleware.py
+│       └── config_middleware.py
 ├── frontend/
-│   ├── index.html       # Web interface
-│   ├── styles.css       # Styling
-│   ├── script.js        # Additional JS
-│   └── assets/          # Static assets
-├── requirements.txt     # Python dependencies
-├── .env.example         # Environment configuration template
-└── README.md           # This file
+│   ├── index.html                 # Web interface
+│   ├── styles.css                 # Styling
+│   └── script.js                  # JavaScript logic
+├── requirements.txt               # Python dependencies
+├── .env.example                   # Environment configuration template
+├── README.md                      # This file
+├── ARCHITECTURE.md                # Architecture documentation
+└── CONFIG.md                      # Configuration guide
 ```
 
 ## API Endpoints
 
+### Main Endpoints
 - `GET /` - Web interface
-- `POST /process` - Python analysis endpoint
-- `POST /start_analysis` - AI analysis endpoint
-- `GET /logs/{session_id}` - Stream AI analysis progress
-- `GET /download/{session_id}` - Download AI analysis results
-- `POST /analyze-revenue` - Revenue impact analysis
+- `POST /api/process` - Python analysis endpoint with comprehensive validation
+- `POST /api/start-analysis` - Start AI analysis with session management
+- `GET /api/logs/{session_id}` - Stream AI analysis progress logs
+- `GET /api/download/{session_id}` - Download analysis results
+- `POST /api/analyze-revenue-variance` - Revenue variance analysis
+
+### Health & Monitoring
+- `GET /health` - Basic application health status
+- `GET /health/config` - Configuration health validation
+- `GET /health/detailed` - Comprehensive service status
+
+### Legacy Endpoints (backward compatibility)
+- `POST /process` - Legacy Python analysis endpoint
+- `POST /start_analysis` - Legacy AI analysis endpoint
+- `GET /logs/{session_id}` - Legacy log streaming
+- `GET /download/{session_id}` - Legacy download endpoint
 
 ## Configuration
 
@@ -118,9 +180,43 @@ Merged-Variance-Analysis-Tool/
 
 To extend or modify the tool:
 
-1. **Backend**: Modify `app/main.py` and `app/core.py`
-2. **Frontend**: Update `frontend/index.html` and `frontend/styles.css`
-3. **AI Logic**: Customize `app/llm_analyzer.py`
+1. **Backend API**: Modify `app/api/analysis.py` for endpoints
+2. **Business Logic**: Update `app/services/processing_service.py` for core processing
+3. **Analysis Logic**: Customize `app/analysis/` modules:
+   - `revenue_analysis.py` - Revenue variance analysis
+   - `anomaly_detection.py` - Anomaly detection rules
+   - `llm_analyzer.py` - AI-powered analysis
+4. **Data Processing**: Modify `app/data/excel_processing.py` for Excel handling
+5. **Frontend**: Update `frontend/index.html` and `frontend/styles.css`
+6. **Configuration**: Adjust `app/core/unified_config.py` for new settings
+
+### Key Implementation Details
+
+#### Month to Month Analysis
+The system automatically detects the analysis period from row 4 of the Excel file:
+- Looks for patterns like "End of May 2025" or "From Jan 2025 to May 2025"
+- Extracts the target month (e.g., "May")
+- Analyzes that month and the previous month (e.g., Apr-May)
+- Filters all analysis data to only include these two months
+
+Located in: `app/data/excel_processing.py:_add_month_to_month_analysis_to_sheet()`
+
+#### Consolidated Months Analysis
+Combines six separate analysis sections into one comprehensive sheet:
+1. Revenue Variance Analysis
+2. Legacy Revenue Analysis
+3. 511 Accounts (Revenue)
+4. 632 Accounts (COGS - Raw Materials)
+5. 641 Accounts (Personnel Expenses)
+6. 642 Accounts (Material Expenses)
+
+Located in: `app/data/excel_processing.py:_add_consolidated_months_analysis_to_sheet()`
+
+## Documentation
+
+- **ARCHITECTURE.md**: Detailed architecture documentation and design patterns
+- **CONFIG.md**: Comprehensive configuration guide with all environment variables
+- **README.md**: This file - quick start and overview
 
 ## License
 

@@ -112,8 +112,63 @@ app/
 - **Responsibilities**:
   - Excel file processing with structure validation
   - Data cleaning with automatic recovery
+  - **Consolidated Analysis Sheet Generation** - Combines multiple analyses into single sheets
+  - **Month-to-Month Analysis** - Intelligent month detection from Excel row 4
+  - **Cleaned Data Sheet Generation** - Automatically creates cleaned BS/PL sheets
   - Data utilities with comprehensive error handling
   - Format validation and security checks
+
+## Analysis Output Features
+
+### **Consolidated Months Analysis Sheet** 🆕
+The system generates a comprehensive "Months Analysis" sheet that consolidates six separate analyses into one view:
+
+1. **Revenue Variance Analysis**: Month-over-month revenue changes with detailed breakdowns
+2. **Legacy Revenue Analysis**: Historical revenue trends and patterns
+3. **511 Accounts Analysis**: Revenue accounts breakdown with variance tracking
+4. **632 Accounts Analysis**: COGS - Raw Materials analysis with cost drivers
+5. **641 Accounts Analysis**: Personnel expenses with headcount implications
+6. **642 Accounts Analysis**: Material expenses with consumption patterns
+
+Each section includes:
+- Color-coded indicators (🟢 Decrease, 🔴 Increase)
+- Percentage changes and absolute values
+- Executive summaries with key insights
+- Visual separators for easy navigation
+
+**Location**: `app/data/excel_processing.py:_add_consolidated_months_analysis_to_sheet()`
+
+### **Month to Month Analysis Sheet** 🆕
+Intelligently detects the analysis period from the Excel file and generates focused two-month comparison:
+
+**How it works:**
+1. Reads row 4 of the PL Breakdown sheet
+2. Detects patterns like:
+   - "End of May 2025" → Analyzes Apr-May
+   - "From Jan 2025 to May 2025" → Analyzes Apr-May
+3. Extracts the target month and calculates previous month
+4. Filters all analysis data to show only these two months
+5. Generates the same comprehensive analysis as Months Analysis, but focused on just 2 months
+
+**Benefits:**
+- Automatic period detection (no manual configuration needed)
+- Consistent with Excel file's reporting period
+- Reduces noise by focusing on recent changes
+- Same detailed analysis structure as full Months Analysis
+
+**Location**: `app/data/excel_processing.py:_add_month_to_month_analysis_to_sheet()`
+
+### **Cleaned Data Sheets** 🆕
+Automatically generates cleaned and standardized BS and PL sheets for each subsidiary:
+
+- **Naming**: `[Subsidiary]_BS_Cleaned` and `[Subsidiary]_PL_Cleaned`
+- **Content**: Processed data with standardized column names and cleaned values
+- **Purpose**: Easy data validation and cross-referencing
+- **Available in**: Both Python and AI analysis modes
+
+**Location**:
+- Python mode: `app/services/processing_service.py:process_all_python_mode()`
+- AI mode: `app/services/processing_service.py:process_all_ai_mode()`
 
 ## Key Features
 
