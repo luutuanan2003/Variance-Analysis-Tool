@@ -12,7 +12,8 @@ from openpyxl.utils.dataframe import dataframe_to_rows
 from ..data.data_utils import DEFAULT_CONFIG, EXCEL_PROCESSING, FILE_PROCESSING
 from ..data.excel_processing import (
     extract_subsidiary_name_from_bytes, process_financial_tab_from_bytes,
-    apply_excel_formatting_ws, _add_revenue_analysis_to_sheet, _add_consolidated_months_analysis_to_sheet
+    apply_excel_formatting_ws, _add_revenue_analysis_to_sheet, _add_consolidated_months_analysis_to_sheet,
+    _add_month_to_month_analysis_to_sheet
 )
 from ..analysis.anomaly_detection import build_anoms_python_mode, build_anoms_ai_mode
 from ..analysis.revenue_analysis import analyze_comprehensive_revenue_impact_from_bytes, analyze_revenue_variance_comprehensive
@@ -129,8 +130,8 @@ def process_all_python_mode(
     except Exception as e:
         logger.error(f"⚠️  Error adding cleaned sheets: {e}", exc_info=True)
 
-    # === ADD CONSOLIDATED MONTHS ANALYSIS SHEET ===
-    logger.info("📊 Adding Consolidated Months Analysis sheet...")
+    # === ADD CONSOLIDATED MONTHS ANALYSIS SHEETS ===
+    logger.info("📊 Adding Consolidated Months Analysis sheets...")
     try:
         # Run comprehensive revenue variance analysis for the first file
         if files:
@@ -143,13 +144,20 @@ def process_all_python_mode(
             logger.info("📊 Running comprehensive revenue impact analysis...")
             revenue_analysis = analyze_comprehensive_revenue_impact_from_bytes(first_file_bytes, first_file_name, CONFIG)
 
-            # Create consolidated Months Analysis sheet
+            # Create consolidated Months Analysis sheet (all months)
+            logger.info("📝 Creating 'Months Analysis' sheet (all months)...")
             months_ws = wb.create_sheet(title="Months Analysis")
             _add_consolidated_months_analysis_to_sheet(months_ws, revenue_analysis, variance_analysis)
-            logger.info("✅ Consolidated Months Analysis sheet added successfully")
+            logger.info("✅ Months Analysis sheet added successfully")
+
+            # Create Month to Month Analysis sheet (latest 2 months only)
+            logger.info("📝 Creating 'Month to Month Analysis' sheet (latest 2 months)...")
+            month_to_month_ws = wb.create_sheet(title="Month to Month Analysis")
+            _add_month_to_month_analysis_to_sheet(month_to_month_ws, revenue_analysis, variance_analysis)
+            logger.info("✅ Month to Month Analysis sheet added successfully")
 
     except Exception as e:
-        logger.error(f"⚠️  Months Analysis sheet creation failed: {e}", exc_info=True)
+        logger.error(f"⚠️  Months Analysis sheets creation failed: {e}", exc_info=True)
         # Continue without months analysis if it fails
 
 
