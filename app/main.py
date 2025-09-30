@@ -229,7 +229,7 @@ async def logs_legacy(request: Request, session_id: str):
 async def download_legacy(request: Request, session_id: str):
     """Legacy /download/{session_id} endpoint - redirects to /api/download/{session_id}."""
     from .api.analysis import download_main_result
-    return await download_main_result(session_id, request)
+    return await download_main_result(session_id)
 
 if __name__ == "__main__":
     import uvicorn
