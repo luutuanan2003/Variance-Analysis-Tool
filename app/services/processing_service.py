@@ -12,12 +12,11 @@ from openpyxl.utils.dataframe import dataframe_to_rows
 from ..data.data_utils import DEFAULT_CONFIG, EXCEL_PROCESSING, FILE_PROCESSING
 from ..data.excel_processing import (
     extract_subsidiary_name_from_bytes, process_financial_tab_from_bytes,
-    apply_excel_formatting_ws, _add_revenue_analysis_to_sheet
+    apply_excel_formatting_ws, _add_revenue_analysis_to_sheet, _add_consolidated_months_analysis_to_sheet
 )
 from ..analysis.anomaly_detection import build_anoms_python_mode, build_anoms_ai_mode
 from ..analysis.revenue_analysis import analyze_comprehensive_revenue_impact_from_bytes, analyze_revenue_variance_comprehensive
 from ..analysis.revenue_variance_excel import _add_revenue_variance_analysis_to_sheet
-from ..services.recent_months_service import recent_months_service
 from ..utils.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -130,80 +129,29 @@ def process_all_python_mode(
     except Exception as e:
         logger.error(f"⚠️  Error adding cleaned sheets: {e}", exc_info=True)
 
-    # === ADD REVENUE VARIANCE ANALYSIS SHEET ===
-    logger.info("📊 Adding Revenue Variance Analysis sheet...")
+    # === ADD CONSOLIDATED MONTHS ANALYSIS SHEET ===
+    logger.info("📊 Adding Consolidated Months Analysis sheet...")
     try:
         # Run comprehensive revenue variance analysis for the first file
         if files:
             first_file_name, first_file_bytes = files[0]
 
-            # Use the new comprehensive variance analysis
-            logger.info("🚀 Running new comprehensive revenue variance analysis...")
+            # Run both analyses
+            logger.info("🚀 Running comprehensive revenue variance analysis...")
             variance_analysis = analyze_revenue_variance_comprehensive(first_file_bytes, first_file_name, CONFIG)
 
-            # Create revenue variance analysis sheet
-            rev_ws = wb.create_sheet(title="Revenue Variance Analysis")
-            _add_revenue_variance_analysis_to_sheet(rev_ws, variance_analysis)
-            logger.info("✅ Revenue Variance Analysis sheet added successfully")
+            logger.info("📊 Running comprehensive revenue impact analysis...")
+            revenue_analysis = analyze_comprehensive_revenue_impact_from_bytes(first_file_bytes, first_file_name, CONFIG)
 
-            # Also add the legacy analysis for comparison
-            logger.info("📊 Adding legacy revenue analysis for comparison...")
-            legacy_analysis = analyze_comprehensive_revenue_impact_from_bytes(first_file_bytes, first_file_name, CONFIG)
-            legacy_ws = wb.create_sheet(title="Legacy Revenue Analysis")
-            _add_revenue_analysis_to_sheet(legacy_ws, legacy_analysis)
-            logger.info("✅ Legacy Revenue Analysis sheet added successfully")
+            # Create consolidated Months Analysis sheet
+            months_ws = wb.create_sheet(title="Months Analysis")
+            _add_consolidated_months_analysis_to_sheet(months_ws, revenue_analysis, variance_analysis)
+            logger.info("✅ Consolidated Months Analysis sheet added successfully")
 
     except Exception as e:
-        logger.error(f"⚠️  Revenue Analysis sheet creation failed: {e}", exc_info=True)
-        # Continue without revenue analysis if it fails
+        logger.error(f"⚠️  Months Analysis sheet creation failed: {e}", exc_info=True)
+        # Continue without months analysis if it fails
 
-    # === ADD RECENT MONTHS ANALYSIS SHEET ===
-    logger.info("📊 Adding Recent Months Analysis sheet...")
-    try:
-        if files:
-            # Create the recent months analysis for all files
-            logger.info("🚀 Running recent months analysis...")
-
-            # Get recent months analysis workbook
-            recent_months_wb_bytes = recent_months_service.analyze_recent_months_sync(
-                files=files,
-                config=CONFIG
-            )
-
-            # Load the recent months workbook to extract the analysis sheet
-            from openpyxl import load_workbook
-            recent_wb = load_workbook(io.BytesIO(recent_months_wb_bytes))
-            recent_ws_source = recent_wb["Recent Months Analysis"]
-
-            # Create new sheet in main workbook
-            recent_ws = wb.create_sheet(title="Recent Months Analysis")
-
-            # Copy data from recent months analysis sheet
-            for row in recent_ws_source.iter_rows(values_only=True):
-                recent_ws.append(row)
-
-            # Copy formatting
-            for row in recent_ws_source.iter_rows():
-                for cell in row:
-                    target_cell = recent_ws.cell(row=cell.row, column=cell.column)
-                    if cell.font:
-                        target_cell.font = cell.font
-                    if cell.fill:
-                        target_cell.fill = cell.fill
-                    if cell.border:
-                        target_cell.border = cell.border
-                    if cell.alignment:
-                        target_cell.alignment = cell.alignment
-
-            # Copy column dimensions
-            for col_letter, col_dim in recent_ws_source.column_dimensions.items():
-                recent_ws.column_dimensions[col_letter].width = col_dim.width
-
-            logger.info("✅ Recent Months Analysis sheet added successfully")
-
-    except Exception as e:
-        logger.error(f"⚠️  Recent Months Analysis sheet creation failed: {e}", exc_info=True)
-        # Continue without recent months analysis if it fails
 
     bio = io.BytesIO()
     wb.save(bio)

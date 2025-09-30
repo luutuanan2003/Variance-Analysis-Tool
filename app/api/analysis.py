@@ -15,7 +15,6 @@ from ..models.analysis import (
     DebugFilesResponse, ErrorResponse
 )
 from ..services.analysis_service import analysis_service
-from ..services.recent_months_service import recent_months_service
 from ..utils.helpers import build_config_overrides
 from ..utils.file_validation import validate_file_list, FileValidator
 from ..utils.input_sanitization import validate_analysis_parameters, sanitize_session_id
@@ -270,88 +269,3 @@ async def list_debug_files(session_id: str):
     files = analysis_service.get_debug_files(session_id)
     return DebugFilesResponse(session_id=session_id, files=files)
 
-@router.post("/recent-months-analysis")
-async def process_recent_months_analysis(
-    request: Request,
-    excel_files: List[UploadFile] = File(...),
-    materiality_vnd: Optional[float] = Form(None),
-    recurring_pct_threshold: Optional[float] = Form(None),
-    revenue_opex_pct_threshold: Optional[float] = Form(None),
-    bs_pct_threshold: Optional[float] = Form(None),
-    recurring_code_prefixes: Optional[str] = Form(None),
-    min_trend_periods: Optional[int] = Form(None),
-    gm_drop_threshold_pct: Optional[float] = Form(None),
-    dep_pct_only_prefixes: Optional[str] = Form(None),
-    customer_column_hints: Optional[str] = Form(None),
-    settings: Settings = Depends(get_settings)
-):
-    """
-    Process Excel files for recent months analysis focusing on current and previous month.
-
-    This endpoint extracts the target month from row 4 of the BS Breakdown sheet,
-    calculates the current and previous month, and runs variance analysis only
-    on those two months.
-    """
-    logger.info(f"Processing {len(excel_files)} files for recent months analysis")
-
-    try:
-        # 1. Validate uploaded files
-        validation_results = await validate_file_list(excel_files, max_files=10)
-        if not validation_results.get("is_valid", False):
-            raise FileProcessingError(
-                message=f"File validation failed: {validation_results.get('errors', [])}",
-                details=validation_results.get('details', {}),
-                suggestions=validation_results.get('suggestions', [])
-            )
-
-        # 2. Validate analysis parameters
-        form_data = {
-            "materiality_vnd": materiality_vnd,
-            "recurring_pct_threshold": recurring_pct_threshold,
-            "revenue_opex_pct_threshold": revenue_opex_pct_threshold,
-            "bs_pct_threshold": bs_pct_threshold,
-            "recurring_code_prefixes": recurring_code_prefixes,
-            "min_trend_periods": min_trend_periods,
-            "gm_drop_threshold_pct": gm_drop_threshold_pct,
-            "dep_pct_only_prefixes": dep_pct_only_prefixes,
-            "customer_column_hints": customer_column_hints,
-        }
-
-        validated_params = validate_analysis_parameters(form_data)
-
-        # 3. Build configuration overrides
-        config_overrides = build_config_overrides(validated_params)
-
-        # 4. Prepare files for processing
-        files_data = []
-        for file in excel_files:
-            file_bytes = await file.read()
-            files_data.append((file.filename or "input.xlsx", file_bytes))
-
-        # 5. Process recent months analysis
-        result_bytes = await recent_months_service.analyze_recent_months(
-            files=files_data,
-            config=config_overrides
-        )
-
-        # 6. Return the result as downloadable file
-        return StreamingResponse(
-            io.BytesIO(result_bytes),
-            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers={"Content-Disposition": "attachment; filename=recent_months_analysis.xlsx"}
-        )
-
-    except ValidationError as e:
-        logger.warning(f"Validation error in recent months analysis: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
-
-    except FileProcessingError as e:
-        logger.error(f"File processing error in recent months analysis: {e}")
-        raise HTTPException(status_code=422, detail=str(e))
-
-    except Exception as e:
-        logger.error(f"Unexpected error in recent months analysis: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail="Recent months analysis failed. Please check your files and try again."
-        )
