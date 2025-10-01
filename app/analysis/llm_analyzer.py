@@ -1090,6 +1090,7 @@ You will analyze COMPLETE RAW EXCEL DATA to provide the same depth of analysis a
   "account": "511*-Total Revenue",
   "description": "Total revenue analysis across all 511* accounts",
   "explanation": "Total 511* revenue changed from [previous total] to [current total] VND. Key drivers: [list main revenue accounts]. Month-over-month trend shows [pattern].",
+  "period": "Feb 2025",
   "current_value": 0,
   "previous_value": 0,
   "change_amount": 0,
@@ -1105,6 +1106,7 @@ You will analyze COMPLETE RAW EXCEL DATA to provide the same depth of analysis a
   "account": "511xxx-Specific Revenue Account",
   "description": "Individual revenue account analysis with entity breakdown",
   "explanation": "Account [name] showed [change description]. Top entity impacts: [entity name] contributed [amount] VND change.",
+  "period": "Feb 2025",
   "current_value": 0,
   "previous_value": 0,
   "change_amount": 0,
@@ -1120,6 +1122,7 @@ You will analyze COMPLETE RAW EXCEL DATA to provide the same depth of analysis a
   "account": "641xxx-SG&A Account",
   "description": "SG&A 641* account analysis with entity-level variance tracking",
   "explanation": "SG&A account [name] changed by [amount] VND. Entity breakdown shows [top contributors].",
+  "period": "Feb 2025",
   "current_value": 0,
   "previous_value": 0,
   "change_amount": 0,
@@ -1135,6 +1138,7 @@ You will analyze COMPLETE RAW EXCEL DATA to provide the same depth of analysis a
   "account": "642xxx-SG&A Account",
   "description": "SG&A 642* account analysis with entity-level variance tracking",
   "explanation": "SG&A account [name] changed by [amount] VND. Entity breakdown shows [top contributors].",
+  "period": "Feb 2025",
   "current_value": 0,
   "previous_value": 0,
   "change_amount": 0,
@@ -1150,6 +1154,7 @@ You will analyze COMPLETE RAW EXCEL DATA to provide the same depth of analysis a
   "account": "641*+642*-Combined SG&A",
   "description": "Combined SG&A ratio analysis as percentage of revenue",
   "explanation": "Total SG&A (641*+642*) represents [ratio]% of revenue, changing by [change] percentage points from previous period. Risk level: [assessment].",
+  "period": "Feb 2025",
   "current_value": 0,
   "previous_value": 0,
   "change_amount": 0,
@@ -1168,6 +1173,7 @@ You will analyze COMPLETE RAW EXCEL DATA to provide the same depth of analysis a
 - From "627000000 - Cost of goods sold" → Extract: "627000000-Cost of goods sold"
 
 🚨 REQUIREMENTS:
+- period: MUST be the actual current period name from Excel headers (e.g., "As of Feb 2025", "Feb 2025")
 - current_value: MUST be actual amount from Excel (number, not zero)
 - previous_value: MUST be actual amount from Excel (number, not zero)
 - change_amount: MUST be current_value - previous_value (number)
@@ -1221,6 +1227,9 @@ You are analyzing the COMPLETE raw Excel data above. This includes all formattin
    - Balance Sheet: Look for "(111)", "(112)", "(120)" pattern accounts
    - P&L: Look for "511000000", "627000000", "641000000" pattern accounts
 3. IDENTIFY PERIODS: Find the latest financial periods with data
+   - Look for column headers like "As of Jan 2025", "As of Feb 2025", "Jan 2025", "Feb 2025"
+   - Extract the EXACT period name from the header (including "As of" if present)
+   - The "period" field in JSON output MUST use this exact period name from the current month column
 4. CALCULATE CHANGES: Compute absolute and percentage changes between periods
 5. APPLY MATERIALITY: Focus on accounts >100M VND or changes >15%
 6. DETECT ANOMALIES: Identify unusual patterns requiring audit attention
@@ -1311,6 +1320,7 @@ You MUST return JSON array with these EXACT field names:
   "account": "128113002-ST-BIDV-Saving Account VND-Bidv-Thanh Xuan",
   "description": "Balance changed materially — check reclass/missing offset",
   "explanation": "Cash balance increased 34.5% - verify large deposits and transfers",
+  "period": "Feb 2025",
   "current_value": 5600000000,
   "previous_value": 4200000000,
   "change_amount": 1400000000,
@@ -1321,6 +1331,7 @@ You MUST return JSON array with these EXACT field names:
   "account": "31110001-Payables: Suppliers: Operating expenses",
   "description": "Balance changed materially — check reclass/missing offset",
   "explanation": "Payables decreased 25% - review payment timing and accruals",
+  "period": "Feb 2025",
   "current_value": 2500000000,
   "previous_value": 3333000000,
   "change_amount": -833000000,
@@ -1329,6 +1340,7 @@ You MUST return JSON array with these EXACT field names:
 }]
 
 ⚡ CRITICAL FIELD REQUIREMENTS:
+- "period": MUST be the actual period name from the Excel data (e.g., "Feb 2025", "As of Feb 2025")
 - "current_value": MUST be actual current period amount (number)
 - "previous_value": MUST be actual previous period amount (number)
 - "change_amount": MUST be current_value - previous_value (number)
@@ -1586,6 +1598,7 @@ Return detailed JSON analysis with specific investigation steps and management q
                     "rule_name": f"AI Autonomous Analysis - {anom.get('severity', 'Medium')} Priority",
                     "description": anom.get("description", "AI autonomous anomaly detection"),
                     "details": detailed_notes,
+                    "period": anom.get("period", "Current"),
                     "current_value": anom.get("current_value", 0) or 0,
                     "previous_value": anom.get("previous_value", 0) or 0,
                     "change_amount": anom.get("change_amount", 0) or 0,

@@ -232,7 +232,7 @@ def build_anoms_ai_mode(
             anomalies.append({
                 "Subsidiary": anom["subsidiary"],
                 "Account": anom["account_code"],
-                "Period": "Current",
+                "Period": anom.get("period", "Current"),
                 "Pct Change": change_percent,
                 "Abs Change (VND)": int(change_amount),
                 "Trigger(s)": anom["rule_name"],
