@@ -476,7 +476,7 @@ def analyze_revenue_variance_comprehensive(xl_bytes: bytes, filename: str, CONFI
         results = {
             'subsidiary': subsidiary,
             'filename': filename,
-            'months_analyzed': month_cols[:CONFIG["months_to_analyze"]],
+            'months_analyzed': month_cols,  # Include ALL month columns (even if some are zero)
             'analysis_summary': {
                 'total_revenue_streams': len(revenue_streams),
                 'total_variance_periods': len(variance_analysis),
@@ -798,7 +798,7 @@ def analyze_comprehensive_revenue_impact_from_bytes(xl_bytes: bytes, filename: s
         analysis_result = {
             'subsidiary': subsidiary,
             'filename': filename,
-            'months_analyzed': month_cols[:CONFIG["months_to_analyze"]],
+            'months_analyzed': month_cols,  # Include ALL month columns (even if some are zero)
             'total_revenue_analysis': {},
             'revenue_by_account': {},
             'gross_margin_analysis': {},
